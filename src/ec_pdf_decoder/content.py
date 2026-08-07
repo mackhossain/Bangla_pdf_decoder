@@ -120,7 +120,6 @@ def _literal_decode(raw: bytes, start: int) -> tuple[bytes, int]:
 
 
 def _skip_inline_image(raw: bytes, start: int) -> int:
-    """Skip an inline image after a BI operator and return after its EI."""
     n = len(raw)
     id_match = re.search(rb"[\x00\t\n\f\r ]ID(?:[\x00\t\n\f\r ])", raw[start:])
     if not id_match:
@@ -135,7 +134,7 @@ def _skip_inline_image(raw: bytes, start: int) -> int:
 
 
 def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
-    """Yield PDF content-stream operands and operators."""
+    """Yield PDF content-stream tokens."""
     raw = bytes(data)
     i = 0
     n = len(raw)
@@ -174,7 +173,7 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
                 i += 1
             yield PDFName(raw[start:i])
             continue
-        if raw[i] in (ord("["), ord("]"), ord(")")):
+        if raw[i] in (ord("["), ord("]")):
             yield PDFOperator(bytes((raw[i],)))
             i += 1
             continue
@@ -201,7 +200,6 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
                 continue
             except ValueError:
                 pass
-
         yield PDFOperator(token)
         if token == b"BI":
             i = _skip_inline_image(raw, i)
@@ -216,23 +214,46 @@ def _text_bytes(value: object) -> bytes:
 
 
 def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[TextShow]:
-    """Extract Tj/TJ/'/\" operands while preserving raw font bytes."""
-    stack: list[object] = []
-    array_stack: list[list[bytes | float | int]] = []
+    """Extract text-showing operations without discarding later operations."""
     result: list[TextShow] = []
+    array_stack: list[list[bytes | float | int]] = []
+    pending: list[object] = []
 
-    for token in tokenize(data):
+    def emit_simple(op: bytes) -> None:
+        if not pending:
+            return
+        value = pending[-1]
+        if op == b"Tj" or op in (b"'", b'"'):
+            if isinstance(value, (PDFString, PDFHexString)):
+                result.append(TextShow(op, _text_bytes(value)))
+        elif op == b"TJ" and isinstance(value, tuple):
+            result.append(TextShow(op, value))
+        pending.clear()
+
+    tokens = tokenize(data)
+    while True:
+        try:
+            token = next(tokens)
+        except StopIteration:
+            break
+        except ContentSyntaxError:
+            # A malformed non-text construct must not erase text already found.
+            # The caller can inspect the page with the diagnostic CLI.
+            break
+
         if isinstance(token, PDFOperator) and token.value == b"[":
+            if array_stack:
+                # PDF content arrays are not nestable. Keep the outer state and
+                # skip the malformed nested array until the next close bracket.
+                continue
             array_stack.append([])
             continue
 
         if isinstance(token, PDFOperator) and token.value == b"]":
             if not array_stack:
-                raise ContentSyntaxError("unmatched TJ array terminator")
+                continue
             values = tuple(array_stack.pop())
-            if array_stack:
-                raise ContentSyntaxError("nested arrays are not valid TJ operands")
-            stack.append(values)
+            pending.append(values)
             continue
 
         if array_stack:
@@ -243,42 +264,17 @@ def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[T
             elif isinstance(token, PDFNumber):
                 array_stack[-1].append(token.value)
             else:
-                raise ContentSyntaxError("invalid item inside TJ array")
+                # An unexpected operator closes the malformed array state so
+                # subsequent text operations can still be recovered.
+                array_stack.clear()
             continue
 
         if not isinstance(token, PDFOperator):
-            stack.append(token)
+            pending.append(token)
             continue
 
-        op = token.value
-        if op == b"Tj":
-            if not stack:
-                raise ContentSyntaxError("Tj has no operand")
-            result.append(TextShow(op, _text_bytes(stack.pop())))
-            stack.clear()
-            continue
+        emit_simple(token.value)
 
-        if op == b"TJ":
-            if not stack:
-                raise ContentSyntaxError("TJ has no operand")
-            value = stack.pop()
-            if not isinstance(value, tuple):
-                raise ContentSyntaxError("TJ operand is not an array")
-            result.append(TextShow(op, value))
-            stack.clear()
-            continue
-
-        if op in (b"'", b'"'):
-            if not stack:
-                raise ContentSyntaxError(f"{op!r} has no text operand")
-            result.append(TextShow(op, _text_bytes(stack.pop())))
-            stack.clear()
-            continue
-
-        stack.append(token)
-
-    if array_stack:
-        raise ContentSyntaxError("unterminated TJ array")
     return result
 
 
