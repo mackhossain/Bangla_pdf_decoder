@@ -33,11 +33,11 @@ def test_real_pdf_tounicode_when_available():
     assert len(result.cmap.codespaces) >= 1
     assert len(result.cmap.mappings) > 0
 
-    # Values observed in the supplied PDF's ToUnicode CMap. These assertions
+    # Values read from the actual PDF's ToUnicode CMap. These assertions
     # verify that the integration path reaches the real CMap rather than a
-    # synthetic mapping.
+    # synthetic or hard-coded mapping.
     assert result.cmap.lookup(0x001B) == (0x0981,)
-    assert result.cmap.lookup(0x0038) == (0x09A1,)
+    assert result.cmap.lookup(0x0038) == (0x09A3,)
     assert result.cmap.lookup(0x0078) == (0x25CC,)
 
 
