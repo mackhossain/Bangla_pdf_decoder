@@ -59,7 +59,7 @@ def test_real_pdf_unicode_extraction_when_available():
         pytest.skip(f"real PDF {PDF_NAME!r} is not available in this checkout")
     pages = extract_unicode_pages(path, 6)
     assert len(pages) == 73
-    assert any("\u09" in page for page in pages)
+    assert any(any("\u0980" <= ch <= "\u09ff" for ch in page) for page in pages)
     assert any(page.strip() for page in pages)
 
 
