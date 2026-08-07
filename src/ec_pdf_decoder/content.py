@@ -1,9 +1,10 @@
-"""Tokenize and extract raw text-showing operations from PDF content streams."""
+"""Tokenize and extract text-showing operations from PDF content streams."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterator
+import re
 
 
 class ContentSyntaxError(ValueError):
@@ -43,6 +44,7 @@ class TextShow:
 
 _WHITESPACE = b"\x00\t\n\f\r "
 _DELIMS = b"()<>[]{}/%"
+_INLINE_EI = re.compile(rb"[\x00\t\n\f\r ]EI(?=[\x00\t\n\f\r ])")
 
 
 def _is_space(byte: int) -> bool:
@@ -109,14 +111,27 @@ def _literal_decode(raw: bytes, start: int) -> tuple[bytes, int]:
                     i += 1
                 out.append(int(bytes(digits), 8) & 0xFF)
                 continue
-            # PDF defines an unrecognised escape as the escaped character
-            # itself. This deliberately consumes exactly one byte.
             out.append(esc)
             i += 1
             continue
         out.append(b)
         i += 1
     raise ContentSyntaxError("unterminated PDF literal string")
+
+
+def _skip_inline_image(raw: bytes, start: int) -> int:
+    """Skip an inline image after a BI operator and return after its EI."""
+    n = len(raw)
+    id_match = re.search(rb"[\x00\t\n\f\r ]ID(?:[\x00\t\n\f\r ])", raw[start:])
+    if not id_match:
+        raise ContentSyntaxError("inline image has no ID marker")
+    data_start = start + id_match.end()
+    while data_start < n and _is_space(raw[data_start]):
+        data_start += 1
+    end_match = _INLINE_EI.search(raw, data_start)
+    if not end_match:
+        raise ContentSyntaxError("inline image has no EI marker")
+    return end_match.end()
 
 
 def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
@@ -159,7 +174,7 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
                 i += 1
             yield PDFName(raw[start:i])
             continue
-        if raw[i] in (ord("["), ord("]")):
+        if raw[i] in (ord("["), ord("]"), ord(")")):
             yield PDFOperator(bytes((raw[i],)))
             i += 1
             continue
@@ -186,7 +201,10 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
                 continue
             except ValueError:
                 pass
+
         yield PDFOperator(token)
+        if token == b"BI":
+            i = _skip_inline_image(raw, i)
 
 
 def _text_bytes(value: object) -> bytes:
