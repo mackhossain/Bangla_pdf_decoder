@@ -109,6 +109,8 @@ def _literal_decode(raw: bytes, start: int) -> tuple[bytes, int]:
                     i += 1
                 out.append(int(bytes(digits), 8) & 0xFF)
                 continue
+            # PDF defines an unrecognised escape as the escaped character
+            # itself. This deliberately consumes exactly one byte.
             out.append(esc)
             i += 1
             continue
@@ -178,12 +180,12 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
         if stripped.isdigit() and stripped:
             yield PDFNumber(int(text))
             continue
-        try:
-            if any(ch in text for ch in ".eE"):
+        if any(ch in text for ch in ".eE"):
+            try:
                 yield PDFNumber(float(text))
                 continue
-        except ValueError:
-            pass
+            except ValueError:
+                pass
         yield PDFOperator(token)
 
 
@@ -195,70 +197,70 @@ def _text_bytes(value: object) -> bytes:
     raise ContentSyntaxError("text operand is not a string")
 
 
-def _array_value(item: object) -> bytes | float | int:
-    if isinstance(item, PDFString):
-        return item.value
-    if isinstance(item, PDFHexString):
-        return item.value
-    if isinstance(item, PDFNumber):
-        return item.value
-    raise ContentSyntaxError("invalid item inside TJ array")
-
-
 def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[TextShow]:
     """Extract Tj/TJ/'/\" operands while preserving raw font bytes."""
-    operands: list[object] = []
-    arrays: list[list[object]] = []
+    stack: list[object] = []
+    array_stack: list[list[bytes | float | int]] = []
     result: list[TextShow] = []
-
-    def push(value: object) -> None:
-        if arrays:
-            arrays[-1].append(value)
-        else:
-            operands.append(value)
 
     for token in tokenize(data):
         if isinstance(token, PDFOperator) and token.value == b"[":
-            arrays.append([])
+            array_stack.append([])
             continue
 
         if isinstance(token, PDFOperator) and token.value == b"]":
-            if not arrays:
+            if not array_stack:
                 raise ContentSyntaxError("unmatched TJ array terminator")
-            value = arrays.pop()
-            push(tuple(value))
+            values = tuple(array_stack.pop())
+            if array_stack:
+                raise ContentSyntaxError("nested arrays are not valid TJ operands")
+            stack.append(values)
+            continue
+
+        if array_stack:
+            if isinstance(token, PDFString):
+                array_stack[-1].append(token.value)
+            elif isinstance(token, PDFHexString):
+                array_stack[-1].append(token.value)
+            elif isinstance(token, PDFNumber):
+                array_stack[-1].append(token.value)
+            else:
+                raise ContentSyntaxError("invalid item inside TJ array")
             continue
 
         if not isinstance(token, PDFOperator):
-            push(token)
+            stack.append(token)
             continue
 
         op = token.value
         if op == b"Tj":
-            if not operands:
+            if not stack:
                 raise ContentSyntaxError("Tj has no operand")
-            result.append(TextShow(op, _text_bytes(operands.pop())))
+            result.append(TextShow(op, _text_bytes(stack.pop())))
+            stack.clear()
             continue
 
         if op == b"TJ":
-            if not operands:
+            if not stack:
                 raise ContentSyntaxError("TJ has no operand")
-            value = operands.pop()
+            value = stack.pop()
             if not isinstance(value, tuple):
                 raise ContentSyntaxError("TJ operand is not an array")
-            result.append(TextShow(op, tuple(_array_value(item) for item in value)))
+            result.append(TextShow(op, value))
+            stack.clear()
             continue
 
         if op in (b"'", b'"'):
-            if not operands:
+            if not stack:
                 raise ContentSyntaxError(f"{op!r} has no text operand")
-            result.append(TextShow(op, _text_bytes(operands.pop())))
+            result.append(TextShow(op, _text_bytes(stack.pop())))
+            stack.clear()
             continue
 
-        operands.append(token)
+        stack.append(token)
 
-    if arrays:
-        raise ContentSyntaxError("unterminated PDF array")
+    if array_stack:
+        raise ContentSyntaxError("unterminated TJ array")
     return result
 
 
