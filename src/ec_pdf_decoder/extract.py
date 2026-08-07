@@ -23,7 +23,23 @@ def _object_map(pdf: bytes) -> dict[int, bytes]:
 
 
 def _dict_value(body: bytes, key: bytes) -> bytes | None:
-    m = re.search(rb"/" + re.escape(key) + rb"\s+(\[.*?\]|<<.*?>>|\d+\s+\d+\s+R)", body, re.S)
+    """Return a simple PDF dictionary value following *key*.
+
+    PDF names such as ``/Filter /FlateDecode`` are valid dictionary values.
+    The previous implementation only recognized arrays, dictionaries, and
+    indirect references, so it silently missed the common name form and fed
+    compressed Flate data to the content parser.
+    """
+    m = re.search(
+        rb"/" + re.escape(key) + rb"\s+("
+        rb"\[.*?\]"
+        rb"|<<.*?>>"
+        rb"|\d+\s+\d+\s+R"
+        rb"|/[A-Za-z0-9_.+#-]+"
+        rb")",
+        body,
+        re.S,
+    )
     return m.group(1) if m else None
 
 
@@ -168,9 +184,6 @@ def _fallback_text_operations(data: bytes) -> list[TextShow]:
                 found.append((i, TextShow(op, value)))
                 break
 
-    # TJ arrays: recover the whole array conservatively. Each item may be a
-    # literal string, hex string, or number. We only accept an array whose
-    # closing bracket is immediately followed by TJ.
     i = 0
     while i < n:
         if data[i:i + 1] != b"[":
@@ -264,9 +277,6 @@ def extract_pdf(path: str | Path) -> int:
             except Exception as exc:
                 print(f"Strict parser: {exc}")
 
-            # The strict parser intentionally remains standards-oriented. The
-            # diagnostic fallback scans independently so one malformed token
-            # cannot hide all valid text-showing operators on the page.
             fallback = _fallback_text_operations(decoded)
             if fallback:
                 operations = fallback
