@@ -25,17 +25,19 @@ def _object_map(pdf: bytes) -> dict[int, bytes]:
 def _dict_value(body: bytes, key: bytes) -> bytes | None:
     """Return a simple PDF dictionary value following *key*.
 
-    PDF names such as ``/Filter /FlateDecode`` are valid dictionary values.
-    The previous implementation only recognized arrays, dictionaries, and
-    indirect references, so it silently missed the common name form and fed
-    compressed Flate data to the content parser.
+    PDF token boundaries do not require whitespace between adjacent names.
+    For example, ``<</Filter/FlateDecode/Length 2777>>`` is valid syntax.
+    The separator before a value may therefore be whitespace *or* the leading
+    slash of another PDF name.  This helper accepts both compact and spaced
+    forms while retaining support for arrays, dictionaries, and references.
     """
     m = re.search(
-        rb"/" + re.escape(key) + rb"\s+("
+        rb"/" + re.escape(key) + rb"(?:\s*)?("
         rb"\[.*?\]"
         rb"|<<.*?>>"
         rb"|\d+\s+\d+\s+R"
         rb"|/[A-Za-z0-9_.+#-]+"
+        rb"|[+-]?\d+(?:\.\d+)?"
         rb")",
         body,
         re.S,
