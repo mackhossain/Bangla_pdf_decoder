@@ -1,4 +1,4 @@
-"""Parser for PDF ToUnicode CMap streams."""
+"""Parser and byte decoder for PDF ToUnicode CMap streams."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import re
 
 
 class CMapError(ValueError):
-    """Raised when a ToUnicode CMap is malformed."""
+    """Raised when a ToUnicode CMap is malformed or cannot decode text."""
 
 
 @dataclass(frozen=True)
@@ -30,9 +30,42 @@ class CMap:
         if value is None:
             return "\ufffd"
         try:
-            return "".join(chr(cp) for cp in value)
-        except ValueError as exc:
+            raw = b"".join(unit.to_bytes(2, "big") for unit in value)
+            return raw.decode("utf-16-be", errors="surrogatepass")
+        except (OverflowError, UnicodeDecodeError) as exc:
             raise CMapError(f"invalid Unicode mapping for code {code:#x}") from exc
+
+    def code_width(self, data: bytes, offset: int = 0) -> int | None:
+        """Return the matching CMap code width at *offset*.
+
+        PDF CMaps may contain code spaces of different widths.  The longest
+        matching width is preferred so a multi-byte code is not accidentally
+        consumed as a shorter code.
+        """
+        remaining = len(data) - offset
+        for width in sorted({space.width for space in self.codespaces}, reverse=True):
+            if remaining < width:
+                continue
+            code = int.from_bytes(data[offset:offset + width], "big")
+            if any(space.width == width and space.start <= code <= space.end for space in self.codespaces):
+                return width
+        return None
+
+    def decode_bytes(self, data: bytes | bytearray | memoryview) -> str:
+        """Decode font character-code bytes using this CMap's codespaces."""
+        raw = bytes(data)
+        out: list[str] = []
+        offset = 0
+        while offset < len(raw):
+            width = self.code_width(raw, offset)
+            if width is None:
+                out.append("\ufffd")
+                offset += 1
+                continue
+            code = int.from_bytes(raw[offset:offset + width], "big")
+            out.append(self.decode_code(code))
+            offset += width
+        return "".join(out)
 
 
 _HEX = re.compile(rb"<([0-9A-Fa-f]+)>")
@@ -69,8 +102,6 @@ def _unicode_values(token: bytes) -> tuple[int, ...]:
 
 
 def _tokens(data: bytes) -> list[bytes]:
-    # Remove comments first. CMap syntax is ASCII and the stream is kept as
-    # bytes throughout this parser.
     cleaned = re.sub(rb"%[^\r\n]*(?:\r?\n|$)", b"\n", data)
     return re.findall(rb"<[^>]*>|\S+", cleaned)
 
@@ -85,12 +116,7 @@ def _next_hex(tokens: list[bytes], index: int) -> tuple[bytes, int]:
 
 
 def parse_cmap(data: bytes | bytearray | memoryview) -> CMap:
-    """Parse codespace, bfchar, and bfrange mappings from a ToUnicode CMap.
-
-    Supported source forms are the standard PDF CMap operators:
-    ``begincodespacerange``, ``beginbfchar`` and ``beginbfrange``. Both a
-    single destination and an array of destinations in a bfrange are handled.
-    """
+    """Parse codespace, bfchar, and bfrange mappings from a ToUnicode CMap."""
     tokens = _tokens(bytes(data))
     codespaces: list[CodeSpaceRange] = []
     mappings: dict[int, tuple[int, ...]] = {}
@@ -147,21 +173,12 @@ def parse_cmap(data: bytes | bytearray | memoryview) -> CMap:
                 destination = tokens[i]
                 i += 1
 
-                if destination.startswith(b"["):
-                    # Tokenizer keeps '[' and ']' separate, so this branch is
-                    # retained only for malformed/non-standard input.
-                    raise CMapError("unexpected bfrange array syntax")
-
                 if destination.startswith(b"<"):
                     base = list(_unicode_values(destination))
-                    if end - start + 1 > 1 and len(base) == 0:
+                    if not base:
                         raise CMapError("empty bfrange destination")
                     for code in range(start, end + 1):
                         values = list(base)
-                        if not values:
-                            raise CMapError("empty bfrange destination")
-                        # Standard bfrange semantics increment the final
-                        # UTF-16 code unit for each source code.
                         delta = code - start
                         last = values[-1] + delta
                         if last > 0xFFFF:
