@@ -118,12 +118,7 @@ def _literal_decode(raw: bytes, start: int) -> tuple[bytes, int]:
 
 
 def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
-    """Yield PDF content-stream operands and operators.
-
-    This is deliberately a content-stream tokenizer, not a full PDF object
-    parser. It preserves byte strings because Type0/Identity-H text is encoded
-    as font character codes, not Unicode text.
-    """
+    """Yield PDF content-stream operands and operators."""
     raw = bytes(data)
     i = 0
     n = len(raw)
@@ -162,6 +157,11 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
                 i += 1
             yield PDFName(raw[start:i])
             continue
+        if raw[i] in (ord("["), ord("]")):
+            yield PDFOperator(bytes((raw[i],)))
+            i += 1
+            continue
+
         start = i
         while i < n and not _is_space(raw[i]) and not _is_delim(raw[i]):
             i += 1
@@ -170,21 +170,33 @@ def tokenize(data: bytes | bytearray | memoryview) -> Iterator[object]:
             raise ContentSyntaxError(f"unexpected byte at offset {i}")
         try:
             text = token.decode("ascii")
-            if any(ch in text for ch in ".eE") or text.lstrip(b"+-").isdigit():
-                number = float(text) if any(ch in text for ch in ".eE") else int(text)
-                yield PDFNumber(number)
-            else:
-                yield PDFOperator(token)
-        except (UnicodeDecodeError, ValueError):
+        except UnicodeDecodeError:
             yield PDFOperator(token)
+            continue
+
+        stripped = text.lstrip("+-")
+        if stripped.isdigit() and stripped:
+            yield PDFNumber(int(text))
+            continue
+        try:
+            if any(ch in text for ch in ".eE"):
+                yield PDFNumber(float(text))
+                continue
+        except ValueError:
+            pass
+        yield PDFOperator(token)
 
 
-def _hex_to_bytes(value: PDFHexString) -> bytes:
-    return value.value
+def _text_bytes(value: object) -> bytes:
+    if isinstance(value, PDFString):
+        return value.value
+    if isinstance(value, PDFHexString):
+        return value.value
+    raise ContentSyntaxError("text operand is not a string")
 
 
 def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[TextShow]:
-    """Extract Tj/TJ/'/" operands while preserving raw font bytes."""
+    """Extract Tj/TJ/'/\" operands while preserving raw font bytes."""
     stack: list[object] = []
     result: list[TextShow] = []
     for token in tokenize(data):
@@ -196,13 +208,7 @@ def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[T
         if op == b"Tj":
             if not stack:
                 raise ContentSyntaxError("Tj has no operand")
-            value = stack.pop()
-            if isinstance(value, PDFString):
-                result.append(TextShow(op, value.value))
-            elif isinstance(value, PDFHexString):
-                result.append(TextShow(op, _hex_to_bytes(value)))
-            else:
-                raise ContentSyntaxError("Tj operand is not a string")
+            result.append(TextShow(op, _text_bytes(stack.pop())))
             stack.clear()
             continue
 
@@ -211,8 +217,6 @@ def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[T
                 raise ContentSyntaxError("TJ has no operand")
             value = stack.pop()
             if not isinstance(value, (list, tuple)):
-                # Arrays are handled below by collecting a lightweight form;
-                # reject anything else rather than silently losing text.
                 raise ContentSyntaxError("TJ operand is not an array")
             result.append(TextShow(op, tuple(value)))
             stack.clear()
@@ -221,18 +225,10 @@ def extract_text_show_operations(data: bytes | bytearray | memoryview) -> list[T
         if op in (b"'", b'"'):
             if not stack:
                 raise ContentSyntaxError(f"{op!r} has no text operand")
-            value = stack.pop()
-            if isinstance(value, PDFString):
-                result.append(TextShow(op, value.value))
-            elif isinstance(value, PDFHexString):
-                result.append(TextShow(op, value.value))
-            else:
-                raise ContentSyntaxError(f"{op!r} text operand is not a string")
+            result.append(TextShow(op, _text_bytes(stack.pop())))
             stack.clear()
             continue
 
-        # Minimal TJ array support: the PDF grammar represents '[' and ']'
-        # as delimiters, so tokenize them as operators and collect operands.
         if op == b"]":
             values: list[bytes | float | int] = []
             while stack:
