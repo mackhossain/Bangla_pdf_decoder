@@ -5,6 +5,7 @@ from src.ec_pdf_decoder.content import (
     PDFNumber,
     PDFOperator,
     PDFString,
+    TextShow,
     extract_text_show_operations,
     tokenize,
 )
@@ -21,14 +22,14 @@ def test_hex_string_and_tj():
 
 
 def test_literal_escapes():
-    ops = extract_text_show_operations(rb"BT (a\\n\\101\\(b\\)) Tj ET")
+    ops = extract_text_show_operations(rb"BT (a\n\101\(b\)) Tj ET")
     assert ops[0].value == b"a\nA(b)"
 
 
 def test_tj_array_preserves_strings_and_numbers():
     ops = extract_text_show_operations(b"BT [<0003> 120 (abc) -30] TJ ET")
     assert ops == [
-        type(ops[0])(b"TJ", (b"\x00\x03", 120, b"abc", -30))
+        TextShow(b"TJ", (b"\x00\x03", 120, b"abc", -30))
     ]
 
 
