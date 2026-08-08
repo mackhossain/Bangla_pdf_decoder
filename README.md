@@ -1,209 +1,100 @@
 # EC PDF Decoder
 
-A byte-accurate, non-OCR PDF extraction toolkit being developed specifically for Bangladesh Election Commission voter-list PDFs.
+A byte-accurate, non-OCR decoder for Bangladesh Election Commission voter-list PDFs.
 
-## Why this project exists
+## Current decoding path
 
-Some Bangladesh Election Commission PDFs display Bangla text correctly in Adobe Acrobat and modern browsers, yet copied text can become corrupted or appear as private-use or unrelated Unicode characters. The underlying PDF can still contain real text: the page may use an embedded Bangla TrueType font, a CID font with `Identity-H` encoding, and a `/ToUnicode` CMap.
+```text
+PDF bytes
+  -> page/content streams
+  -> raw Tj/TJ byte strings
+  -> 2-byte Identity-H CIDs
+  -> font resource
+  -> /ToUnicode CMap
+  -> validated custom-glyph overrides
+  -> logical Bangla Unicode
+```
 
-This project takes the PDF apart at the PDF-object and font-encoding level instead of treating the page as an image. The goal is to recover the original logical Bangla Unicode text without OCR whenever the PDF itself contains enough information to do so.
+The project never treats rendered glyph appearance as Unicode truth. It preserves PDF strings as bytes and uses the PDF's declared encoding first.
 
-## Current target PDF characteristics
+## Target PDF
 
-The initial reverse-engineering target contains structures such as:
+The reverse-engineering target contains:
 
 ```text
 /BaseFont /CQCQVJ+Bangla
 /Subtype /Type0
 /Encoding /Identity-H
-/ToUnicode 236 0 R
 /DescendantFonts [235 0 R]
+/ToUnicode 236 0 R
 ```
 
-The corresponding `/ToUnicode` stream maps CID values to Unicode code points. This is important because the glyphs shown on the page are not necessarily the Unicode characters produced by ordinary copy/paste.
+The descendant is a CIDFontType2 with an Identity CID-to-GID mapping. Therefore, for this font, the 2-byte CID value identifies the same numeric GID in the embedded TrueType font.
 
-## Design principles
+## New deterministic decoder
 
-- **No OCR for the core extraction path.** The decoder works from the PDF's own objects, content streams, CMaps, and embedded fonts.
-- **Byte-first processing.** PDF strings and streams are kept as bytes until the layer that actually knows how to interpret them.
-- **Layered architecture.** Lexing, object parsing, xref/document access, stream decoding, CMap handling, font handling, content interpretation, Bangla reconstruction, and voter-record extraction remain separate concerns.
-- **Tests before expansion.** Each layer should have focused tests before higher-level decoding depends on it.
-- **Diagnostics matter.** Offsets, object numbers, generations, token types, and decoding decisions should remain inspectable so difficult PDFs can be reverse-engineered rather than guessed at.
-- **Accuracy over convenience.** Generic PDF text-extraction libraries may be useful for comparison, but they are not the source of truth for this decoder.
+`src/ec_pdf_decoder/extract.py` now handles:
 
-## Architecture
+- PDF object and page discovery
+- FlateDecode streams
+- compact PDF dictionaries such as `<</Filter/FlateDecode/Length 123>>`
+- raw `Tj`, `TJ`, `'` and `"` recovery
+- Identity-H 2-byte CID decoding
+- `/ToUnicode` `bfchar` and `bfrange`
+- multi-codepoint Unicode destinations
+- CID usage/frequency reporting
+- unresolved CID reporting
+- JSON diagnostics
+- validated custom-glyph overrides
 
-The intended package is organized approximately as follows:
-
-```text
-ec_pdf_decoder/
-├── src/
-│   └── ec_pdf_decoder/
-│       ├── __init__.py
-│       ├── lexer.py       # PDF lexical scanner
-│       ├── objects.py     # PDF value/object model
-│       ├── parser.py      # Recursive PDF object parser
-│       ├── xref.py        # Cross-reference and trailer handling
-│       ├── streams.py     # PDF stream/filter decoding
-│       ├── cmap.py        # ToUnicode CMap parsing
-│       ├── font.py        # Embedded font inspection/mapping
-│       ├── content.py     # Page content operators
-│       ├── bangla.py      # Bangla-specific reconstruction logic
-│       └── decoder.py     # High-level extraction API
-│
-├── tests/
-├── README.md
-└── samples/               # Local test PDFs; keep sensitive documents private
-```
-
-Not every module in the architecture is implemented yet. The repository is being built incrementally so each stage can be verified against real Election Commission PDFs.
-
-## Implemented so far
-
-### Lexer
-
-`src/ec_pdf_decoder/lexer.py` provides a byte-oriented PDF lexer with support for:
-
-- whitespace and comments
-- integer and real numbers
-- PDF names
-- `#XX` hexadecimal name escapes
-- literal strings
-- nested literal strings
-- PDF string escape sequences
-- octal string escapes
-- hexadecimal strings
-- arrays (`[` and `]`)
-- dictionaries (`<<` and `>>`)
-- `true`, `false`, and `null`
-- generic PDF keywords
-- token byte offsets
-- explicit lexical errors for malformed input
-
-### Object model
-
-`src/ec_pdf_decoder/objects.py` provides typed representations for:
-
-- names
-- numbers
-- strings and hexadecimal strings
-- booleans and null
-- arrays
-- dictionaries
-- indirect references such as `236 0 R`
-- indirect objects
-- stream objects
-
-PDF byte strings are intentionally **not** decoded as UTF-8 by this layer.
-
-### Recursive parser
-
-`src/ec_pdf_decoder/parser.py` converts lexer tokens into the object model and currently handles:
-
-- scalar values
-- arrays
-- dictionaries
-- indirect references
-- complete indirect-object definitions such as `6 0 obj ... endobj`
-
-Stream byte extraction remains a separate responsibility because raw stream data must not be tokenized as ordinary PDF syntax.
-
-## The important Bangla problem
-
-A typical problematic extraction can produce incorrect characters even though Acrobat or a browser renders the intended Bangla text correctly.
-
-This does **not** automatically mean the PDF is image-only. A PDF can contain selectable text whose glyph/CID mapping and Unicode mapping interact differently with different extraction implementations.
-
-The project therefore follows the actual PDF data path:
-
-```text
-PDF bytes
-   ↓
-PDF objects / xref
-   ↓
-page resources
-   ↓
-content stream
-   ↓
-font resource
-   ↓
-CID / character codes
-   ↓
-ToUnicode CMap + embedded font information
-   ↓
-logical Unicode reconstruction
-   ↓
-Bangla text
-   ↓
-structured voter record
-```
-
-## Accuracy goal
-
-The goal is not to promise a meaningless percentage such as "99% accurate" independent of the source data. The real goal is deterministic, testable decoding: for a PDF whose embedded CMap, font, and content information is sufficient to reconstruct the source text, the decoder should reproduce that text without OCR.
-
-When a PDF contains ambiguous, incomplete, or deliberately non-standard mappings, the decoder should report the ambiguity instead of silently inventing characters.
-
-## Development
-
-Python 3.10+ is recommended.
-
-Create a virtual environment on Windows:
+Run page 3:
 
 ```cmd
-python -m venv .venv
-.venv\Scripts\activate
+python -m src.ec_pdf_decoder.extract 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --mapping custom_glyph_map.json
 ```
 
-Install the development dependencies used by the current implementation:
+Write a machine-readable report:
 
 ```cmd
-pip install fonttools rich pytest
+python -m src.ec_pdf_decoder.extract 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --mapping custom_glyph_map.json --json page3_analysis.json
 ```
 
-Run the test suite:
+Unresolved CIDs are displayed as `⟦CID:n⟧` instead of being guessed.
+
+## Custom-glyph context analyzer
+
+The old experimental `bytes`/regex failure is replaced by a byte-safe analyzer:
+
+```cmd
+python analyze_custom_context.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf 3
+```
+
+It reports only CIDs that remain unresolved after `/ToUnicode` and the validated mapping file, together with neighboring CID values, decoded context, and raw hex.
+
+## Validated target-font observations
+
+Current reverse-engineering evidence establishes:
+
+```text
+CQCQVJ+Bangla
+GID 207 -> ে
+GID 290 -> ন্ত
+```
+
+These are stored in `custom_glyph_map.json` as validated overrides. More mappings must be added only after evidence is available; outline-similarity results are not sufficient proof for a ligature or multi-codepoint glyph.
+
+## Tests
 
 ```cmd
 python -m pytest -q
 ```
 
-Compile-check the package directly when needed:
+Regression coverage includes Identity-H CID decoding and a multi-codepoint `/ToUnicode` mapping for `ন্ত`.
 
-```cmd
-python -m py_compile src\ec_pdf_decoder\lexer.py
-python -m py_compile src\ec_pdf_decoder\objects.py
-python -m py_compile src\ec_pdf_decoder\parser.py
-```
+## Important accuracy rule
 
-## Repository workflow
+The decoder does not promise a percentage of accuracy independent of the PDF. Where the PDF contains enough information, it should deterministically reproduce logical Unicode text. Where information is insufficient, it reports the exact unresolved CID/GID instead of silently inventing a character.
 
-The project is intentionally developed in small, reviewable commits. Before starting a new change:
+## Privacy
 
-```cmd
-git pull
-```
-
-After tests pass:
-
-```cmd
-git status
-git add .
-git commit -m "Describe the change"
-git push
-```
-
-## Security and privacy
-
-Election/voter PDFs can contain sensitive personal information. Sample documents should remain private unless there is a deliberate reason to publish them. The repository is intended to remain private during development.
-
-Do not commit credentials, access tokens, personal databases, or unrelated voter datasets.
-
-## Project status
-
-**Early development / reverse-engineering stage.**
-
-The lexer, core object model, and recursive parser are being established first. The next major layers are robust indirect-object/document parsing, cross-reference handling, stream/filter decoding, `/ToUnicode` CMap parsing, embedded TrueType font inspection, PDF content-operator decoding, and finally Bangla-specific text reconstruction and structured voter extraction.
-
-## License
-
-License terms have not yet been finalized.
+Election/voter PDFs contain sensitive personal information. Do not commit real voter PDFs, databases, credentials, or access tokens to this repository.
