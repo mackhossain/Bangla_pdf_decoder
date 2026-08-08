@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -56,7 +57,13 @@ def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path:
         for gid, entry in learned_font.get("glyphs", {}).items():
             if isinstance(entry, dict) and entry.get("confidence", 0) >= 1.0:
                 section[str(gid)] = str(entry["text"])
-    temp = Path(tempfile.mkstemp(prefix="ec_mapping_", suffix=".json")[1])
+
+    # tempfile.mkstemp() leaves an OS-level file descriptor open. On Windows
+    # that descriptor keeps the file locked, so the later unlink() in main()
+    # fails with WinError 32. Close the descriptor immediately before writing.
+    fd, filename = tempfile.mkstemp(prefix="ec_mapping_", suffix=".json")
+    os.close(fd)
+    temp = Path(filename)
     temp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
     return temp
 
