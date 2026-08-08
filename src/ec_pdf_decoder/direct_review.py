@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 
 from .bangla_candidates import generate_candidates
-from .direct_pdf import embedded_fonts, used_gids
+from .direct_pdf import embedded_fonts, ttf_gid_map, used_gids
 from .learned_mapping import font_key, glyph_key, load_database, remember_mapping, save_database
 
 
@@ -106,11 +106,12 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
     candidates = generate_candidates(candidate_path)
     candidates += ["ঁ","ং","ঃ","া","ি","ী","ু","ূ","ৃ","ে","ৈ","ো","ৌ","্","ৗ","ড়","ঢ়","য়"]
     candidates = sorted(set(candidates), key=lambda x: (len(x), x))
-    gids = [g for g in used_gids(pdf, page) if g >= 120]
-    if only_gid is not None:
-        gids = [g for g in gids if g == only_gid]
 
     for _resource, base_font, raw in embedded_fonts(pdf, page):
+        cmap_gids = set(ttf_gid_map(raw))
+        gids = [g for g in used_gids(pdf, page) if g >= 120 and g not in cmap_gids]
+        if only_gid is not None:
+            gids = [g for g in gids if g == only_gid]
         fkey = font_key(raw, base_font)
         with tempfile.TemporaryDirectory(prefix="ec_pdf_font_") as tmp:
             font_path = Path(tmp) / "embedded.ttf"
