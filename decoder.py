@@ -1,129 +1,48 @@
-"""Production command for deterministic EC Bangla PDF decoding with learning.
-
-Examples:
-    python decoder.py FILE.pdf --page 3
-    python decoder.py FILE.pdf --page 3 --review
-    python decoder.py FILE.pdf --page 3 --review --text page3.txt
-
-The command first uses the validated legacy mapping, then uses the embedded
-TrueType cmap for ordinary Unicode-mapped GIDs, then loads mappings learned
-for the exact embedded font fingerprint.  With --review, only still-unresolved
-custom GIDs are sent to the interactive learner.  Confirmed mappings are saved
-at confidence 1.0 and the page is decoded again automatically.
-"""
+"""EC Bangla PDF decoder with embedded-TTF fallback and interactive learning."""
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import re
 import tempfile
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
-
-from src.ec_pdf_decoder.extract import (
-    _decode_stream, _dict_value, _font_descriptor_info, _font_refs,
-    _object_map, _page_objects, _resources_value, analyze_page,
+from src.ec_pdf_decoder.direct_pdf import (
+    analyze_page_direct,
+    embedded_fonts,
+    ttf_gid_map,
 )
 from src.ec_pdf_decoder.learned_mapping import font_key, load_database
-from review_mappings import run as review_run
+from src.ec_pdf_decoder.direct_review import run as review_run
 
 
-def _page_font_keys(pdf: bytes, page: int):
-    """Yield (BaseFont, exact embedded-font fingerprint) for fonts on a page."""
-    objects = _object_map(pdf)
-    pages = _page_objects(objects)
-    if page < 1 or page > len(pages):
-        raise ValueError(f"page {page} outside 1..{len(pages)}")
-    page_body = pages[page - 1][1]
-    resources = _resources_value(page_body, b"Resources")
-    for _resource, ref in _font_refs(resources).items():
-        info = _font_descriptor_info(objects, ref)
-        descriptor_ref = info.get("font_descriptor")
-        descriptor = objects.get(descriptor_ref, b"") if isinstance(descriptor_ref, int) else b""
-        ff = _dict_value(descriptor, b"FontFile2")
-        refs = re.findall(rb"(\d+)\s+\d+\s+R", ff or b"")
-        if not refs:
-            continue
-        font_bytes = _decode_stream(objects.get(int(refs[0]), b""))
-        if font_bytes:
-            yield str(info.get("base_font", "")), font_key(
-                font_bytes, str(info.get("base_font", ""))
-            ), font_bytes
+def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path: Path) -> Path:
+    """Build a temporary validated mapping for the direct decoder.
 
-
-def _embedded_unicode_gid_map(font_bytes: bytes) -> dict[int, str]:
-    """Return GID -> Unicode text for glyphs explicitly present in the TTF cmap.
-
-    This is deliberately a fallback for ordinary glyphs.  Custom conjunct glyphs
-    such as GID 290 have no Unicode cmap entry and therefore remain unresolved
-    for the visual learner.  We never infer a custom glyph from outline
-    similarity here.
+    The direct resolver is used here because EC PDFs commonly store
+    /Resources as an indirect object.  The old resolver treated the reference
+    itself as the dictionary, producing an empty cmap and making even ordinary
+    Bengali letters look unresolved.
     """
-    path = None
-    try:
-        # TTFont can consume a file-like object, avoiding any Windows temp-file
-        # lifetime/locking issues.
-        from io import BytesIO
-
-        font = TTFont(BytesIO(font_bytes), lazy=False)
-        try:
-            reverse = font.getReverseGlyphMap()
-            result: dict[int, str] = {}
-            for codepoint, glyph_name in font.getBestCmap().items():
-                gid = reverse.get(glyph_name)
-                if gid is None:
-                    continue
-                char = chr(codepoint)
-                # Prefer a single Unicode scalar when several codepoints point
-                # to the same glyph.  The first one is deterministic.
-                result.setdefault(gid, char)
-            return result
-        finally:
-            font.close()
-    finally:
-        # Kept explicit so this helper remains safe if implementation changes
-        # to use a temporary font path in the future.
-        if path is not None:
-            try:
-                Path(path).unlink(missing_ok=True)
-            except OSError:
-                pass
-
-
-def _materialize_mapping(
-    pdf: bytes, page: int, legacy_path: Path, learned_path: Path
-) -> Path:
     base = json.loads(legacy_path.read_text(encoding="utf-8")) if legacy_path.exists() else {}
     learned = load_database(learned_path)
-    merged = {key: dict(value) for key, value in base.items()}
+    merged = {k: dict(v) for k, v in base.items()}
 
-    for base_font, fkey, font_bytes in _page_font_keys(pdf, page):
+    for _resource, base_font, raw in embedded_fonts(pdf, page):
         section = merged.setdefault(base_font, {})
-
-        # 1. Ordinary Unicode glyphs: derive CID/GID -> Unicode directly from
-        #    the embedded TTF cmap.  Only fill missing entries so an explicit
-        #    legacy mapping always wins.
-        for gid, text in _embedded_unicode_gid_map(font_bytes).items():
+        for gid, text in ttf_gid_map(raw).items():
             section.setdefault(str(gid), text)
-
-        # 2. Previously confirmed mappings for this exact embedded font.
-        learned_font = learned.get("fonts", {}).get(fkey, {})
-        for gid, entry in learned_font.get("glyphs", {}).items():
+        fkey = font_key(raw, base_font)
+        glyphs = learned.get("fonts", {}).get(fkey, {}).get("glyphs", {})
+        for gid, entry in glyphs.items():
             if isinstance(entry, dict) and entry.get("confidence", 0) >= 1.0:
-                section[str(gid)] = str(entry["text"])
+                section[str(gid)] = str(entry.get("text", ""))
 
-    # tempfile.mkstemp() leaves an OS-level file descriptor open. On Windows
-    # that descriptor keeps the file locked, so the later unlink() in main()
-    # fails with WinError 32. Close the descriptor immediately before writing.
-    fd, filename = tempfile.mkstemp(prefix="ec_mapping_", suffix=".json")
+    fd, name = tempfile.mkstemp(prefix="ec_mapping_", suffix=".json")
     os.close(fd)
-    temp = Path(filename)
-    temp.write_text(
-        json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return temp
+    path = Path(name)
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
 
 
 def main() -> int:
@@ -132,9 +51,8 @@ def main() -> int:
     parser.add_argument("--page", type=int, required=True)
     parser.add_argument("--mapping", type=Path, default=Path("custom_glyph_map.json"))
     parser.add_argument("--learned", type=Path, default=Path("learned_glyph_map.json"))
-    parser.add_argument(
-        "--review", action="store_true", help="interactively learn unresolved custom glyphs"
-    )
+    parser.add_argument("--review", action="store_true")
+    parser.add_argument("--gid", type=int, help="review only one CID/GID")
     parser.add_argument("--text", type=Path)
     parser.add_argument("--json", dest="json_path", type=Path)
     args = parser.parse_args()
@@ -142,36 +60,38 @@ def main() -> int:
     pdf = args.pdf.read_bytes()
     mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
     try:
-        report = analyze_page(args.pdf, args.page, mapping_path)
+        report = analyze_page_direct(args.pdf, args.page, mapping_path)
+
+        # Only genuinely unresolved glyphs reach the learner.  Normal Unicode
+        # glyphs have already been filled from the embedded TTF cmap.
         if args.review and report["missing_cids"]:
             review_run(
                 args.pdf,
                 args.page,
                 args.learned,
                 Path("data/bangla_conjuncts.json"),
-                None,
+                args.gid,
             )
             mapping_path.unlink(missing_ok=True)
-            mapping_path = _materialize_mapping(
-                pdf, args.page, args.mapping, args.learned
-            )
-            report = analyze_page(args.pdf, args.page, mapping_path)
+            mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
+            report = analyze_page_direct(args.pdf, args.page, mapping_path)
     finally:
         mapping_path.unlink(missing_ok=True)
 
     text = "\n".join(str(item["decoded"]) for item in report["operations"])
     print(f"PDF: {args.pdf.name}")
     print(f"PAGE: {args.page}")
+    print(f"MAPPED ENTRIES: {report['tounicode_entries']}")
     print(f"UNRESOLVED CIDs: {report['missing_cids']}")
-    print("\nDECODED TEXT")
+    print("\n# DECODED TEXT")
     print("=" * 72)
     print(text)
+
     if args.text:
         args.text.write_text(text + "\n", encoding="utf-8")
     if args.json_path:
-        args.json_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        args.json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
     return 0 if not report["missing_cids"] else 2
 
 
