@@ -1,18 +1,9 @@
-"""Interactive learner for unresolved custom Bangla PDF glyphs.
-
-Usage:
-    python review_mappings.py FILE.pdf --page 3
-    python review_mappings.py FILE.pdf --page 3 --gid 290
-
-For every unresolved custom GID the program ranks Bangla candidates, creates a
-local HTML page showing the real embedded PDF glyph and the candidates, and
-asks for confirmation.  A confirmed answer is stored at confidence 1.0 in
-learned_glyph_map.json and is never asked again for the same embedded font.
-"""
+"""Interactive learner for unresolved custom Bangla PDF glyphs."""
 from __future__ import annotations
 
 import argparse
 import base64
+import json
 import re
 import tempfile
 import webbrowser
@@ -102,9 +93,7 @@ def rank_candidates(font_path: Path, target_gid: int, candidates: list[str], lim
                 ymax = max(s[4] for s in valid)
                 tw = max(1, target[3] - target[1])
                 th = max(1, target[4] - target[2])
-                cw = xmax - xmin
-                ch = ymax - ymin
-                score = abs(cw - tw) / tw + abs(ch - th) / th
+                score = abs((xmax - xmin) - tw) / tw + abs((ymax - ymin) - th) / th
                 if len(gids) == 1:
                     score *= 0.75
         rows.append((score, text, gids))
@@ -130,27 +119,11 @@ def write_review_html(path: Path, font_path: Path, gid: int, ranked):
     path_data = target_svg(font_path, gid)
     cards = []
     for index, (score, text, gids) in enumerate(ranked, 1):
-        cards.append(
-            f'<div class="card"><div class="candidate">{index}. {text}</div>'
-            f'<div class="meta">score={score:.6f} | shaped GIDs={gids}</div></div>'
-        )
-    html = f'''<!doctype html>
-<html><head><meta charset="utf-8"><title>EC Bangla glyph review GID {gid}</title>
-<style>
-body{{font-family:Arial,sans-serif;margin:24px;background:#f7f7f7}}
-.target{{background:white;border:1px solid #bbb;padding:12px;width:340px}}
-.glyph{{width:320px;height:230px;border:1px solid #888;background:white}}
-.cards{{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}}
-.card{{background:white;border:1px solid #aaa;padding:16px;min-width:180px}}
-.candidate{{font-family:EmbeddedBangla,serif;font-size:42px}}
-.meta{{font-family:monospace;font-size:12px;margin-top:8px}}
-@font-face{{font-family:EmbeddedBangla;src:url(data:font/ttf;base64,{encoded}) format("truetype");}}
-</style></head><body>
-<h1>PDF custom glyph — GID {gid}</h1>
-<div class="target"><b>Actual embedded PDF glyph</b><br>
-<svg class="glyph" viewBox="-200 -200 1600 1500"><path d="{path_data}" fill="black" transform="translate(0,1200) scale(1,-1)"/></svg></div>
-<h2>Candidate renderings in the same embedded font</h2><div class="cards">{''.join(cards)}</div>
-</body></html>'''
+        cards.append(f'<div class="card"><div class="candidate">{index}. {text}</div><div class="meta">score={score:.6f} | shaped GIDs={gids}</div></div>')
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><title>EC Bangla glyph review GID {gid}</title>
+<style>body{{font-family:Arial,sans-serif;margin:24px;background:#f7f7f7}}.target{{background:white;border:1px solid #bbb;padding:12px;width:340px}}.glyph{{width:320px;height:230px;border:1px solid #888;background:white}}.cards{{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}}.card{{background:white;border:1px solid #aaa;padding:16px;min-width:180px}}.candidate{{font-family:EmbeddedBangla,serif;font-size:42px}}.meta{{font-family:monospace;font-size:12px;margin-top:8px}}@font-face{{font-family:EmbeddedBangla;src:url(data:font/ttf;base64,{encoded}) format("truetype")}}</style></head><body>
+<h1>PDF custom glyph — GID {gid}</h1><div class="target"><b>Actual embedded PDF glyph</b><br><svg class="glyph" viewBox="-200 -200 1600 1500"><path d="{path_data}" fill="black" transform="translate(0,1200) scale(1,-1)"/></svg></div>
+<h2>Candidate renderings in the same embedded font</h2><div class="cards">{''.join(cards)}</div></body></html>'''
     path.write_text(html, encoding="utf-8")
 
 
@@ -166,14 +139,15 @@ def used_custom_gids(pdf: bytes, page: int) -> list[int]:
                 if isinstance(value, bytes):
                     for pos in range(0, len(value) - 1, 2):
                         used.add(int.from_bytes(value[pos:pos + 2], "big"))
-    # GIDs below 120 are Unicode-mapped in the inspected Bangla font.
     return sorted(gid for gid in used if gid >= 120)
 
 
 def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid: int | None):
     pdf = pdf_path.read_bytes()
     db = load_database(db_path)
-    for resource, base_font, font_bytes in embedded_fonts(pdf, page):
+    legacy_path = Path("custom_glyph_map.json")
+    legacy = json.loads(legacy_path.read_text(encoding="utf-8")) if legacy_path.exists() else {}
+    for _resource, base_font, font_bytes in embedded_fonts(pdf, page):
         with tempfile.TemporaryDirectory(prefix="ec_pdf_font_") as temp:
             font_path = Path(temp) / "embedded.ttf"
             font_path.write_bytes(font_bytes)
@@ -185,6 +159,9 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
             if only_gid is not None:
                 gids = [gid for gid in gids if gid == only_gid]
             for gid in gids:
+                if str(gid) in legacy.get(base_font, {}):
+                    print(f"SKIP GID {gid}: validated legacy mapping -> {legacy[base_font][str(gid)]}")
+                    continue
                 existing = db.get("fonts", {}).get(fkey, {}).get("glyphs", {}).get(str(gid), {})
                 if existing.get("confidence", 0) >= 1.0:
                     print(f"SKIP GID {gid}: already learned -> {existing.get('text')}")
@@ -209,15 +186,7 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
                         break
                     if answer.isdigit() and 1 <= int(answer) <= len(ranked):
                         text = ranked[int(answer) - 1][1]
-                        remember_mapping(
-                            db,
-                            fkey=fkey,
-                            base_font=base_font,
-                            gid=gid,
-                            gkey=glyph_key(font_path, gid),
-                            text=text,
-                            confidence=1.0,
-                        )
+                        remember_mapping(db, fkey=fkey, base_font=base_font, gid=gid, gkey=glyph_key(font_path, gid), text=text, confidence=1.0)
                         save_database(db_path, db)
                         print(f"LEARNED: CID/GID {gid} -> {text} | confidence=1.0")
                         break
