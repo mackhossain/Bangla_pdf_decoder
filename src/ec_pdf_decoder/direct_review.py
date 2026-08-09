@@ -124,11 +124,21 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
                 if existing.get('confidence', 0) >= 1.0:
                     print(f'SKIP GID {gid}: already learned -> {existing.get("text")}', flush=True); continue
 
-                print(f'Preparing visual review for CID/GID {gid}...', flush=True)
-                ranked = rank(font_path, gid, candidates)
+                # Create the visual artifacts BEFORE candidate ranking so every unresolved CID
+                # immediately gets a real embedded-font glyph file.
+                print(f'Preparing actual PDF glyph visual for CID/GID {gid}...', flush=True)
                 html_path = Path.cwd() / f'glyph_review_{gid}.html'
                 svg_path = Path.cwd() / f'actual_glyph_{gid}.svg'
                 _write_actual_svg(svg_path, font_path, gid)
+                _write_html(html_path, font_path, gid, [])
+                print(f'  SVG:  {svg_path.resolve()}', flush=True)
+                print(f'  HTML: {html_path.resolve()}', flush=True)
+                try:
+                    webbrowser.open(html_path.resolve().as_uri(), new=2)
+                except Exception as exc:
+                    print(f'Could not automatically open browser: {exc}', flush=True)
+
+                ranked = rank(font_path, gid, candidates)
                 _write_html(html_path, font_path, gid, ranked)
 
                 print('\n' + '=' * 72, flush=True)
@@ -138,10 +148,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
                 print(f'  SVG:  {svg_path.resolve()}', flush=True)
                 print(f'  HTML: {html_path.resolve()}', flush=True)
                 print('The browser window shows the actual embedded glyph on top and candidate Unicode renderings below.', flush=True)
-                try:
-                    webbrowser.open(html_path.resolve().as_uri(), new=2)
-                except Exception as exc:
-                    print(f'Could not automatically open browser: {exc}', flush=True)
                 for i, (score, text, shaped) in enumerate(ranked, 1):
                     print(f'  {i:2d}. {text}   score={score:.6f}   shaped={shaped}', flush=True)
 
