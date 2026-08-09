@@ -1,2 +1,4 @@
 fonttools>=4.50
 uharfbuzz>=0.40
+openai>=1.99
+cairosvg>=2.7
