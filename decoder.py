@@ -7,6 +7,7 @@ from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.learned_mapping import font_key,load_database
+from src.ec_pdf_decoder.direct_review import run as review_run
 from src.ec_pdf_decoder.ai_review import run as ai_review_run
 
 def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)->Path:
@@ -46,9 +47,10 @@ def main()->int:
     try:
         report=analyze_page_direct(args.pdf,args.page,mapping_path)
         if (args.review or args.ai_review) and report['missing_cids']:
-            # Both review modes use the same fixed interactive reviewer.
-            # --review is human/deterministic; --ai-review additionally asks AI.
-            ai_review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),use_ai=args.ai_review)
+            if args.ai_review:
+                ai_review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),use_ai=True)
+            else:
+                review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']))
             try: mapping_path.unlink(missing_ok=True)
             except PermissionError: pass
             mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); report=analyze_page_direct(args.pdf,args.page,mapping_path)
