@@ -13,10 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from .bangla_candidates import generate_candidates
-# IMPORTANT: use the fixed PDF resolver. EC pages contain nested direct
-# Resources dictionaries; importing the legacy direct_pdf helpers here can
-# make the AI reviewer see zero embedded fonts even though decoder.py found
-# unresolved CIDs.
 from .direct_pdf_fixed import embedded_fonts, ttf_gid_map, used_gids
 from .learned_mapping import font_key, glyph_key, load_database, remember_mapping, save_database
 from .direct_review import _svg, rank
@@ -108,34 +104,44 @@ Return at most 5 candidates, sorted by confidence descending. Confidence must be
 
 
 def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
-        only_gid: int | None = None) -> None:
-    """Run AI-assisted interactive review for unresolved custom glyphs."""
+        only_gid: int | None = None, unresolved_cids: list[int] | None = None) -> None:
+    """Run AI-assisted interactive review for unresolved custom glyphs.
+
+    ``unresolved_cids`` comes directly from the decoder's authoritative report.
+    This is intentional: the review UI must ask about every CID that the
+    decoder says is unresolved, rather than independently guessing which GIDs
+    need review.
+    """
     pdf = pdf_path.read_bytes()
     db = load_database(db_path)
 
-    # Keep the AI prompt bounded. The deterministic ranker still considers the
-    # complete generated candidate set, while the AI sees curated candidates
-    # plus the best font/HarfBuzz candidates for this particular glyph.
     curated = generate_candidates(candidate_path, include_generated=False)
     curated += ["ঁ","ং","ঃ","া","ি","ী","ু","ূ","ৃ","ে","ৈ","ো","ৌ","্","ৗ","ড়","ঢ়","য়"]
     curated = sorted(set(curated), key=lambda x: (len(x), x))
     all_candidates = generate_candidates(candidate_path)
 
+    targets = list(unresolved_cids or [])
+    if only_gid is not None:
+        targets = [g for g in targets if g == only_gid]
+
     found_font = False
+    reviewed_any = False
     for _resource, base_font, raw in embedded_fonts(pdf, page):
         found_font = True
         cmap_gids = set(ttf_gid_map(raw))
-        gids = [g for g in used_gids(pdf, page) if g >= 120 and g not in cmap_gids]
-        if only_gid is not None:
-            gids = [g for g in gids if g == only_gid]
+        if unresolved_cids is None:
+            targets = [g for g in used_gids(pdf, page) if g >= 120 and g not in cmap_gids]
+            if only_gid is not None:
+                targets = [g for g in targets if g == only_gid]
         fkey = font_key(raw, base_font)
         with tempfile.TemporaryDirectory(prefix="ec_pdf_ai_font_") as tmp:
             font_path = Path(tmp) / "embedded.ttf"
             font_path.write_bytes(raw)
-            for gid in gids:
+            for gid in targets:
                 existing = db.get("fonts", {}).get(fkey, {}).get("glyphs", {}).get(str(gid), {})
                 if existing.get("confidence", 0) >= 1.0:
                     continue
+                reviewed_any = True
 
                 ranked = rank(font_path, gid, all_candidates)
                 ai_candidates = sorted(
@@ -186,22 +192,18 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
                         if not text:
                             print("Empty mapping not accepted.")
                             continue
-                        remember_mapping(
-                            db, fkey=fkey, base_font=base_font, gid=gid,
-                            gkey=glyph_key(font_path, gid), text=text,
-                            source="user_confirmed", confidence=1.0,
-                        )
+                        remember_mapping(db, fkey=fkey, base_font=base_font, gid=gid,
+                                         gkey=glyph_key(font_path, gid), text=text,
+                                         source="user_confirmed", confidence=1.0)
                         save_database(db_path, db)
                         print(f"LEARNED: CID/GID {gid} -> {text} | confidence=1.0 | source=user_confirmed")
                         break
                     if answer.isdigit() and 1 <= int(answer) <= min(10, len(options)):
                         text, ai_conf, _reason = options[int(answer) - 1]
-                        remember_mapping(
-                            db, fkey=fkey, base_font=base_font, gid=gid,
-                            gkey=glyph_key(font_path, gid), text=text,
-                            source="user_confirmed_ai" if any(r["text"] == text for r in ai_rows) else "user_confirmed",
-                            confidence=1.0,
-                        )
+                        remember_mapping(db, fkey=fkey, base_font=base_font, gid=gid,
+                                         gkey=glyph_key(font_path, gid), text=text,
+                                         source="user_confirmed_ai" if any(r["text"] == text for r in ai_rows) else "user_confirmed",
+                                         confidence=1.0)
                         save_database(db_path, db)
                         print(f"LEARNED: CID/GID {gid} -> {text} | confidence=1.0 | user confirmed (AI prior={ai_conf:.3f})")
                         break
@@ -209,4 +211,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
 
     if not found_font:
         raise RuntimeError(f"AI review found no embedded font on page {page}")
+    if not reviewed_any and targets:
+        print("AI REVIEW: all requested unresolved CIDs are already human-confirmed; nothing to review.")
     save_database(db_path, db)
