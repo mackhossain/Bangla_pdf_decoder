@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from src.ec_pdf_decoder.direct_pdf import object_map, pages, page_resources, font_refs, font_info, embedded_fonts, ttf_gid_map
+from src.ec_pdf_decoder.direct_pdf_fixed import object_map, pages, page_resources, font_refs, font_info, embedded_fonts, ttf_gid_map
 
 
 def main() -> int:
