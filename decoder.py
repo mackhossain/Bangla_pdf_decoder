@@ -5,8 +5,10 @@ import argparse
 import json
 import os
 import tempfile
+import unicodedata
 from pathlib import Path
 
+from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import (
     analyze_page_direct,
@@ -62,19 +64,37 @@ def _flat_mapping(mapping_path: Path) -> dict[str, str]:
     return flat
 
 
-def _logical_text(report: dict, mapping_path: Path) -> str:
-    """Rebuild glyph tokens and restore Bengali logical Unicode order."""
+def _logical_text(report: dict, mapping_path: Path, font_bytes: bytes | None = None) -> str:
+    """Rebuild glyph tokens and restore Bengali logical Unicode order.
+
+    The PDF content stream is a visual/shaped glyph stream. We first apply the
+    deterministic Bengali reordering pass, then let HarfBuzz shape both the
+    original and reordered candidates with the embedded PDF TTF. The candidate
+    whose resulting visual GIDs best match the PDF's original CID/GID sequence
+    wins. If HarfBuzz is unavailable, the deterministic visual-order recovery
+    remains the fallback.
+    """
     mapping = _flat_mapping(mapping_path)
-    all_tokens: list[str] = []
+    chunks: list[str] = []
 
-    for index, operation in enumerate(report.get("operations", [])):
-        if index:
-            all_tokens.append("\n")
-        for value in operation.get("cids", []):
-            key = str(value)
-            all_tokens.append(mapping.get(key, f"⟦CID:{value}⟧"))
+    for operation in report.get("operations", []):
+        cids = [int(value) for value in operation.get("cids", [])]
+        tokens = [mapping.get(str(cid), f"⟦CID:{cid}⟧") for cid in cids]
 
-    return "".join(restore_bangla_logical_order_tokens(all_tokens))
+        original = "".join(tokens)
+        reordered = "".join(
+            restore_bangla_logical_order_tokens(tokens, visual_order=True)
+        )
+
+        if any(token.startswith("⟦CID:") for token in tokens):
+            selected = reordered
+        else:
+            selected, _score = choose_candidate(
+                font_bytes, cids, original, reordered
+            )
+        chunks.append(selected)
+
+    return unicodedata.normalize("NFC", "\n".join(chunks))
 
 
 def main() -> int:
@@ -103,11 +123,15 @@ def main() -> int:
                 Path("data/bangla_conjuncts.json"),
                 args.gid,
             )
-            mapping_path.unlink(missing_ok=True)
+            try:
+                mapping_path.unlink(missing_ok=True)
+            except PermissionError:
+                pass
             mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
             report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
-        text = _logical_text(report, mapping_path)
+        font_bytes = next((raw for _resource, _base, raw in embedded_fonts(pdf, args.page)), None)
+        text = _logical_text(report, mapping_path, font_bytes)
     finally:
         try:
             mapping_path.unlink(missing_ok=True)
