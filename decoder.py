@@ -18,6 +18,7 @@ from src.ec_pdf_decoder.direct_pdf_fixed import (
 )
 from src.ec_pdf_decoder.learned_mapping import font_key, load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
+from src.ec_pdf_decoder.ai_review import run as ai_review_run
 
 
 def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path: Path) -> Path:
@@ -71,15 +72,7 @@ def _logical_text(
     font_bytes: bytes | None = None,
     corrections_path: Path | None = None,
 ) -> str:
-    """Rebuild glyph tokens and restore Bengali logical Unicode order.
-
-    The PDF content stream is a visual/shaped glyph stream. We first apply the
-    deterministic Bengali reordering pass, then let HarfBuzz shape both the
-    original and reordered candidates with the embedded PDF TTF. The candidate
-    whose resulting visual GIDs best match the PDF's original CID/GID sequence
-    wins. Finally, a conservative cleanup pass repairs residual artifacts that
-    can survive when the PDF stores an entire visual cluster as one custom glyph.
-    """
+    """Rebuild glyph tokens and restore Bengali logical Unicode order."""
     mapping = _flat_mapping(mapping_path)
     chunks: list[str] = []
 
@@ -116,7 +109,8 @@ def main() -> int:
         default=Path("data/bangla_corrections.json"),
         help="confirmed residual Bengali word corrections JSON",
     )
-    parser.add_argument("--review", action="store_true")
+    parser.add_argument("--review", action="store_true", help="interactive human glyph review")
+    parser.add_argument("--ai-review", action="store_true", help="AI-assisted glyph review; every save still requires human confirmation")
     parser.add_argument("--gid", type=int, help="review only one CID/GID")
     parser.add_argument("--text", type=Path)
     parser.add_argument("--json", dest="json_path", type=Path)
@@ -125,23 +119,42 @@ def main() -> int:
     pdf = args.pdf.read_bytes()
     mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
     text = ""
+    report: dict = {"missing_cids": []}
     try:
         report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
-        if args.review and report["missing_cids"]:
-            review_run(
-                args.pdf,
-                args.page,
-                args.learned,
-                Path("data/bangla_conjuncts.json"),
-                args.gid,
-            )
-            try:
-                mapping_path.unlink(missing_ok=True)
-            except PermissionError:
-                pass
-            mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
-            report = analyze_page_direct(args.pdf, args.page, mapping_path)
+        # --ai-review always enters the review workflow. The AI only suggests;
+        # the user must explicitly choose a candidate or enter Unicode manually.
+        if (args.review or args.ai_review) and report["missing_cids"]:
+            if args.ai_review:
+                ai_review_run(
+                    args.pdf,
+                    args.page,
+                    args.learned,
+                    Path("data/bangla_conjuncts.json"),
+                    args.gid,
+                )
+                try:
+                    mapping_path.unlink(missing_ok=True)
+                except PermissionError:
+                    pass
+                mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
+                report = analyze_page_direct(args.pdf, args.page, mapping_path)
+
+            if args.review and report["missing_cids"]:
+                review_run(
+                    args.pdf,
+                    args.page,
+                    args.learned,
+                    Path("data/bangla_conjuncts.json"),
+                    args.gid,
+                )
+                try:
+                    mapping_path.unlink(missing_ok=True)
+                except PermissionError:
+                    pass
+                mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
+                report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
         font_bytes = next((raw for _resource, _base, raw in embedded_fonts(pdf, args.page)), None)
         text = _logical_text(report, mapping_path, font_bytes, args.corrections)
