@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
-from src.ec_pdf_decoder.direct_pdf import (
+from src.ec_pdf_decoder.direct_pdf_fixed import (
     analyze_page_direct,
     embedded_fonts,
     ttf_gid_map,
@@ -18,13 +18,7 @@ from src.ec_pdf_decoder.direct_review import run as review_run
 
 
 def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path: Path) -> Path:
-    """Build a temporary validated mapping for the direct decoder.
-
-    The direct resolver is used here because EC PDFs commonly store
-    /Resources as an indirect object.  The old resolver treated the reference
-    itself as the dictionary, producing an empty cmap and making even ordinary
-    Bengali letters look unresolved.
-    """
+    """Build a temporary validated mapping for the direct decoder."""
     base = json.loads(legacy_path.read_text(encoding="utf-8")) if legacy_path.exists() else {}
     learned = load_database(learned_path)
     merged = {k: dict(v) for k, v in base.items()}
@@ -69,13 +63,7 @@ def _flat_mapping(mapping_path: Path) -> dict[str, str]:
 
 
 def _logical_text(report: dict, mapping_path: Path) -> str:
-    """Rebuild glyph tokens and restore Bengali logical Unicode order.
-
-    Keeping one mapped CID/GID as one token is important.  For example the
-    learned CID 206 is the single glyph ``র্`` (reph), while CID 387 is the
-    distinct whole glyph ``দুর্``.  Character-only post-processing would lose
-    that distinction and could move the wrong ``র্``.
-    """
+    """Rebuild glyph tokens and restore Bengali logical Unicode order."""
     mapping = _flat_mapping(mapping_path)
     all_tokens: list[str] = []
 
@@ -107,8 +95,6 @@ def main() -> int:
     try:
         report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
-        # Only genuinely unresolved glyphs reach the learner.  Normal Unicode
-        # glyphs have already been filled from the embedded TTF cmap.
         if args.review and report["missing_cids"]:
             review_run(
                 args.pdf,
@@ -121,16 +107,11 @@ def main() -> int:
             mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
             report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
-        # Decode first, then reconstruct Bengali logical order.  The learned
-        # CID/GID mapping itself is deliberately untouched.
         text = _logical_text(report, mapping_path)
     finally:
         try:
             mapping_path.unlink(missing_ok=True)
         except PermissionError:
-            # Windows can briefly retain a handle after the interactive
-            # reviewer exits.  The mapping is temporary; failure to remove it
-            # must never hide an otherwise successful decode.
             pass
 
     print(f"PDF: {args.pdf.name}")
