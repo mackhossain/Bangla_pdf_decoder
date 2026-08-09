@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from fontTools.agl import toUnicode as agl_to_unicode
 from fontTools.ttLib import TTFont
 
 from .learned_mapping import font_key, load_database
@@ -15,8 +16,6 @@ from .learned_mapping import font_key, load_database
 OBJ_RE = re.compile(rb"(?ms)(\d+)\s+(\d+)\s+obj\s*(.*?)\s*endobj")
 REF_RE = re.compile(rb"(\d+)\s+(\d+)\s+R")
 HEX_RE = re.compile(rb"<([0-9A-Fa-f]+)>")
-GLYPH_UNI_RE = re.compile(r"uni([0-9A-Fa-f]{4,6})")
-GLYPH_U_RE = re.compile(r"(?:^|[._])u([0-9A-Fa-f]{4,6})(?:$|[._])")
 
 
 def object_map(pdf: bytes) -> dict[int, bytes]:
@@ -121,18 +120,24 @@ def embedded_fonts(pdf: bytes, page: int):
 
 
 def _glyph_name_text(name: str) -> str | None:
-    """Decode Unicode encoded in a TrueType glyph name.
+    """Decode Unicode represented by a TrueType glyph name.
 
-    EC embedded fonts often have a perfectly useful glyph name such as
-    ``uni09C7`` even though that glyph has no entry in the font cmap because
-    the PDF is using Identity-H/CID addressing.  Therefore cmap-only lookup
-    is insufficient.  We also understand compound names such as
-    ``uni0995_uni09CD_uni09A4`` and ``uni0995.1``.
+    This uses the Adobe Glyph List first, then the explicit ``uniXXXX`` and
+    ``uXXXX`` conventions.  The AGL step is important for glyphs such as
+    ``space``, ``period`` and ``parenleft`` when an Identity-H PDF has no
+    usable Unicode cmap.
     """
-    if name in {".notdef", "space"}:
+    if name == ".notdef":
         return None
 
-    # Adobe-style names: uni09A8_uni09CD_uni09A4, uni09A8.123, etc.
+    try:
+        text = agl_to_unicode(name)
+    except Exception:
+        text = ""
+    if text:
+        return text
+
+    # Adobe-style Unicode names: uni09A8_uni09CD_uni09A4, uni09A8.123, etc.
     parts = re.findall(r"uni([0-9A-Fa-f]{4,6})", name)
     if parts:
         try:
@@ -141,7 +146,7 @@ def _glyph_name_text(name: str) -> str | None:
             pass
 
     # Some fonts use u09A8 or u1D00 style names.
-    match = GLYPH_U_RE.search(name)
+    match = re.fullmatch(r"u([0-9A-Fa-f]{4,6})", name.split(".", 1)[0])
     if match:
         try:
             return chr(int(match.group(1), 16))
@@ -151,12 +156,12 @@ def _glyph_name_text(name: str) -> str | None:
 
 
 def ttf_gid_map(font_bytes: bytes) -> dict[int, str]:
-    """Return GID -> Unicode using BOTH cmap and glyph-name evidence.
+    """Return GID -> Unicode using cmap, glyph names, and AGL evidence.
 
-    The glyph-name fallback is essential for this EC font family: ordinary
-    Bengali glyphs are Unicode-named but the embedded font's cmap does not
-    necessarily expose those names to fontTools' best-cmap selection.
-    Manual learned mappings still override this fallback later.
+    EC Identity-H fonts can have a valid glyph outline and a meaningful glyph
+    name while omitting that glyph from the Unicode cmap.  The previous
+    cmap-only implementation therefore left ordinary CIDs unresolved even
+    though their TTF glyphs were directly identifiable.
     """
     font = TTFont(BytesIO(font_bytes), lazy=False)
     try:
@@ -170,8 +175,7 @@ def ttf_gid_map(font_bytes: bytes) -> dict[int, str]:
             if gid is not None:
                 out.setdefault(gid, chr(cp))
 
-        # 2. Unicode encoded in glyph names.  Do this for every GID because
-        # Identity-H PDF fonts may have no usable Unicode cmap at all.
+        # 2. Glyph names. This also resolves space and ASCII punctuation.
         for gid, name in enumerate(glyph_order):
             text = _glyph_name_text(name)
             if text:
@@ -319,7 +323,7 @@ def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | N
                 mappings.update(parse_tounicode(data))
 
         base = str(info.get("base_font", ""))
-        # Manual/custom mappings override ToUnicode.  This is required for
+        # Manual/custom mappings override ToUnicode. This is required for
         # EC's custom conjunct glyphs such as CID 207 and CID 290.
         _apply_mapping_section(mappings, _mapping_section(override_data, base))
 
