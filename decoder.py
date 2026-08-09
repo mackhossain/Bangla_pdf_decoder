@@ -123,8 +123,8 @@ def main() -> int:
     try:
         report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
-        # --ai-review always enters the review workflow. The AI only suggests;
-        # the user must explicitly choose a candidate or enter Unicode manually.
+        # The decoder's report is authoritative. Pass its exact unresolved CID
+        # list to the review workflow so review cannot silently miss a CID.
         if (args.review or args.ai_review) and report["missing_cids"]:
             if args.ai_review:
                 ai_review_run(
@@ -133,6 +133,7 @@ def main() -> int:
                     args.learned,
                     Path("data/bangla_conjuncts.json"),
                     args.gid,
+                    list(report["missing_cids"]),
                 )
                 try:
                     mapping_path.unlink(missing_ok=True)
