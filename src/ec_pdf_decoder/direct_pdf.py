@@ -78,25 +78,48 @@ def content_refs(page_body: bytes) -> list[int]:
 
 
 def page_resources(objects: dict[int, bytes], page_body: bytes) -> bytes | None:
-    """Resolve page Resources, including direct and indirect dictionaries."""
-    value = dict_value(page_body, b"Resources")
-    return resolve(objects, value)
+    """Resolve page Resources, including a direct dictionary with nested ExtGState."""
+    # Important: dict_value() cannot safely capture a nested <<...>> dictionary
+    # when another nested dictionary occurs before /Font. For EC PDFs the page
+    # often looks like /Resources<< /ExtGState<<...>> /Font<<...>> >>. Capture
+    # the whole page-level Resources dictionary with a small balanced scanner.
+    marker = re.search(rb"/Resources\s*", page_body)
+    if marker:
+        pos = marker.end()
+        if page_body[pos:pos + 2] == b"<<":
+            start = pos
+            depth = 0
+            i = pos
+            while i < len(page_body) - 1:
+                pair = page_body[i:i + 2]
+                if pair == b"<<":
+                    depth += 1
+                    i += 2
+                    continue
+                if pair == b">>":
+                    depth -= 1
+                    i += 2
+                    if depth == 0:
+                        return page_body[start:i]
+                    continue
+                i += 1
+        value = dict_value(page_body, b"Resources")
+        return resolve(objects, value)
+    return None
 
 
 def _resource_font_entries(resources: bytes) -> list[tuple[bytes, int]]:
-    """Find font references without assuming a particular nested-dict layout."""
+    """Extract only /Font entries from a resource dictionary."""
     entries: list[tuple[bytes, int]] = []
 
-    # Normal PDF form: /Font << /F1 12 0 R /F2 15 0 R >>
-    for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", resources):
-        name = m.group(1)
-        # Avoid accidentally treating unrelated resource references as fonts.
-        before = resources[max(0, m.start() - 300):m.start()]
-        if re.search(rb"/Font\b", before):
-            entries.append((name, int(m.group(2))))
+    # The EC page uses /Font<< /F1 6 0 R >>. This targeted pattern avoids
+    # accidentally stopping at an earlier nested /ExtGState dictionary.
+    for block in re.finditer(rb"/Font\s*<<(.{0,10000}?)>>", resources, re.S):
+        for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", block.group(1)):
+            entries.append((m.group(1), int(m.group(2))))
 
-    # Some generated PDFs have an intermediate /Font object.  The generic
-    # fallback is safe because analyze_page_direct later verifies FontFile2.
+    # If /Font itself is an indirect reference, resolve() is handled by the
+    # caller and this fallback handles the resulting simple dictionary.
     if not entries:
         for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", resources):
             entries.append((m.group(1), int(m.group(2))))
@@ -109,18 +132,15 @@ def font_refs(objects: dict[int, bytes], resources: bytes | None) -> dict[bytes,
     resources = resolve(objects, resources) or b""
     result: dict[bytes, int] = {}
 
-    # First inspect a direct /Font dictionary.
-    font_value = dict_value(resources, b"Font")
-    font_dict = resolve(objects, font_value)
-    if font_dict:
-        for name, ref in _resource_font_entries(font_dict):
-            result[name] = ref
+    # Handle direct /Font<<...>> first.
+    result.update(dict(_resource_font_entries(resources)))
 
-    # Then inspect the resource object itself in case /Font was nested in a
-    # structure that the lightweight dictionary parser did not capture.
+    # Handle indirect /Font 123 0 R when present.
     if not result:
-        for name, ref in _resource_font_entries(resources):
-            result[name] = ref
+        font_value = dict_value(resources, b"Font")
+        font_dict = resolve(objects, font_value)
+        if font_dict:
+            result.update(dict(_resource_font_entries(font_dict)))
 
     return result
 
@@ -159,7 +179,6 @@ def embedded_fonts(pdf: bytes, page: int):
 
 
 def _glyph_name_text(name: str) -> str | None:
-    """Decode Unicode represented by a TrueType glyph name."""
     if name == ".notdef":
         return None
     try:
