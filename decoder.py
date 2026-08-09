@@ -7,6 +7,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf import (
     analyze_page_direct,
     embedded_fonts,
@@ -45,6 +46,49 @@ def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path:
     return path
 
 
+def _flat_mapping(mapping_path: Path) -> dict[str, str]:
+    """Flatten the temporary font-scoped mapping for CID/GID reconstruction."""
+    try:
+        data = json.loads(mapping_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    flat: dict[str, str] = {}
+    if not isinstance(data, dict):
+        return flat
+
+    for section in data.values():
+        if not isinstance(section, dict):
+            continue
+        for key, value in section.items():
+            if isinstance(value, str):
+                flat[str(key)] = value
+            elif isinstance(value, dict) and isinstance(value.get("text"), str):
+                flat[str(key)] = value["text"]
+    return flat
+
+
+def _logical_text(report: dict, mapping_path: Path) -> str:
+    """Rebuild glyph tokens and restore Bengali logical Unicode order.
+
+    Keeping one mapped CID/GID as one token is important.  For example the
+    learned CID 206 is the single glyph ``র্`` (reph), while CID 387 is the
+    distinct whole glyph ``দুর্``.  Character-only post-processing would lose
+    that distinction and could move the wrong ``র্``.
+    """
+    mapping = _flat_mapping(mapping_path)
+    all_tokens: list[str] = []
+
+    for index, operation in enumerate(report.get("operations", [])):
+        if index:
+            all_tokens.append("\n")
+        for value in operation.get("cids", []):
+            key = str(value)
+            all_tokens.append(mapping.get(key, f"⟦CID:{value}⟧"))
+
+    return "".join(restore_bangla_logical_order_tokens(all_tokens))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Decode Bangladesh EC Bangla PDF text")
     parser.add_argument("pdf", type=Path)
@@ -59,6 +103,7 @@ def main() -> int:
 
     pdf = args.pdf.read_bytes()
     mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
+    text = ""
     try:
         report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
@@ -75,10 +120,19 @@ def main() -> int:
             mapping_path.unlink(missing_ok=True)
             mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
             report = analyze_page_direct(args.pdf, args.page, mapping_path)
-    finally:
-        mapping_path.unlink(missing_ok=True)
 
-    text = "\n".join(str(item["decoded"]) for item in report["operations"])
+        # Decode first, then reconstruct Bengali logical order.  The learned
+        # CID/GID mapping itself is deliberately untouched.
+        text = _logical_text(report, mapping_path)
+    finally:
+        try:
+            mapping_path.unlink(missing_ok=True)
+        except PermissionError:
+            # Windows can briefly retain a handle after the interactive
+            # reviewer exits.  The mapping is temporary; failure to remove it
+            # must never hide an otherwise successful decode.
+            pass
+
     print(f"PDF: {args.pdf.name}")
     print(f"PAGE: {args.page}")
     print(f"MAPPED ENTRIES: {report['tounicode_entries']}")
