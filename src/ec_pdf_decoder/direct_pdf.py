@@ -61,7 +61,10 @@ def stream_bytes(body: bytes | None) -> bytes | None:
     data = body[m.end():end].rstrip(b"\r\n")
     filt = dict_value(body, b"Filter") or b""
     if b"FlateDecode" in filt:
-        return zlib.decompress(data)
+        try:
+            return zlib.decompress(data)
+        except zlib.error:
+            return None
     return data
 
 
@@ -75,15 +78,51 @@ def content_refs(page_body: bytes) -> list[int]:
 
 
 def page_resources(objects: dict[int, bytes], page_body: bytes) -> bytes | None:
-    return resolve(objects, dict_value(page_body, b"Resources"))
+    """Resolve page Resources, including direct and indirect dictionaries."""
+    value = dict_value(page_body, b"Resources")
+    return resolve(objects, value)
+
+
+def _resource_font_entries(resources: bytes) -> list[tuple[bytes, int]]:
+    """Find font references without assuming a particular nested-dict layout."""
+    entries: list[tuple[bytes, int]] = []
+
+    # Normal PDF form: /Font << /F1 12 0 R /F2 15 0 R >>
+    for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", resources):
+        name = m.group(1)
+        # Avoid accidentally treating unrelated resource references as fonts.
+        before = resources[max(0, m.start() - 300):m.start()]
+        if re.search(rb"/Font\b", before):
+            entries.append((name, int(m.group(2))))
+
+    # Some generated PDFs have an intermediate /Font object.  The generic
+    # fallback is safe because analyze_page_direct later verifies FontFile2.
+    if not entries:
+        for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", resources):
+            entries.append((m.group(1), int(m.group(2))))
+
+    seen: set[int] = set()
+    return [(name, ref) for name, ref in entries if not (ref in seen or seen.add(ref))]
 
 
 def font_refs(objects: dict[int, bytes], resources: bytes | None) -> dict[bytes, int]:
-    resources = resolve(objects, resources)
-    font_dict = resolve(objects, dict_value(resources, b"Font"))
-    if not font_dict:
-        return {}
-    return {name: int(ref) for name, ref in re.findall(rb"/(\S+)\s+(\d+)\s+\d+\s+R", font_dict)}
+    resources = resolve(objects, resources) or b""
+    result: dict[bytes, int] = {}
+
+    # First inspect a direct /Font dictionary.
+    font_value = dict_value(resources, b"Font")
+    font_dict = resolve(objects, font_value)
+    if font_dict:
+        for name, ref in _resource_font_entries(font_dict):
+            result[name] = ref
+
+    # Then inspect the resource object itself in case /Font was nested in a
+    # structure that the lightweight dictionary parser did not capture.
+    if not result:
+        for name, ref in _resource_font_entries(resources):
+            result[name] = ref
+
+    return result
 
 
 def font_info(objects: dict[int, bytes], font_ref: int) -> dict[str, Any]:
@@ -120,32 +159,21 @@ def embedded_fonts(pdf: bytes, page: int):
 
 
 def _glyph_name_text(name: str) -> str | None:
-    """Decode Unicode represented by a TrueType glyph name.
-
-    This uses the Adobe Glyph List first, then the explicit ``uniXXXX`` and
-    ``uXXXX`` conventions.  The AGL step is important for glyphs such as
-    ``space``, ``period`` and ``parenleft`` when an Identity-H PDF has no
-    usable Unicode cmap.
-    """
+    """Decode Unicode represented by a TrueType glyph name."""
     if name == ".notdef":
         return None
-
     try:
         text = agl_to_unicode(name)
     except Exception:
         text = ""
     if text:
         return text
-
-    # Adobe-style Unicode names: uni09A8_uni09CD_uni09A4, uni09A8.123, etc.
     parts = re.findall(r"uni([0-9A-Fa-f]{4,6})", name)
     if parts:
         try:
             return "".join(chr(int(part, 16)) for part in parts)
         except ValueError:
             pass
-
-    # Some fonts use u09A8 or u1D00 style names.
     match = re.fullmatch(r"u([0-9A-Fa-f]{4,6})", name.split(".", 1)[0])
     if match:
         try:
@@ -156,26 +184,15 @@ def _glyph_name_text(name: str) -> str | None:
 
 
 def ttf_gid_map(font_bytes: bytes) -> dict[int, str]:
-    """Return GID -> Unicode using cmap, glyph names, and AGL evidence.
-
-    EC Identity-H fonts can have a valid glyph outline and a meaningful glyph
-    name while omitting that glyph from the Unicode cmap.  The previous
-    cmap-only implementation therefore left ordinary CIDs unresolved even
-    though their TTF glyphs were directly identifiable.
-    """
     font = TTFont(BytesIO(font_bytes), lazy=False)
     try:
         out: dict[int, str] = {}
         glyph_order = font.getGlyphOrder()
         reverse = font.getReverseGlyphMap()
-
-        # 1. Explicit Unicode cmap.
         for cp, name in font.getBestCmap().items():
             gid = reverse.get(name)
             if gid is not None:
                 out.setdefault(gid, chr(cp))
-
-        # 2. Glyph names. This also resolves space and ASCII punctuation.
         for gid, name in enumerate(glyph_order):
             text = _glyph_name_text(name)
             if text:
@@ -268,7 +285,6 @@ def decode_operation(op, mapping: dict[int, str]):
 
 
 def _mapping_section(data: dict[str, Any], base_font: str) -> dict[str, Any]:
-    """Find a manual mapping despite PDF subset-prefix spelling differences."""
     if not isinstance(data, dict):
         return {}
     candidates = [base_font, base_font.lstrip("/")]
@@ -321,12 +337,8 @@ def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | N
             data = stream_bytes(objects.get(tu_ref))
             if data:
                 mappings.update(parse_tounicode(data))
-
         base = str(info.get("base_font", ""))
-        # Manual/custom mappings override ToUnicode. This is required for
-        # EC's custom conjunct glyphs such as CID 207 and CID 290.
         _apply_mapping_section(mappings, _mapping_section(override_data, base))
-
         ff_ref = info.get("font_file2")
         if isinstance(ff_ref, int):
             raw = stream_bytes(objects.get(ff_ref))
