@@ -8,6 +8,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from src.ec_pdf_decoder.bangla_cleanup import cleanup_bangla_text
 from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import (
@@ -64,15 +65,20 @@ def _flat_mapping(mapping_path: Path) -> dict[str, str]:
     return flat
 
 
-def _logical_text(report: dict, mapping_path: Path, font_bytes: bytes | None = None) -> str:
+def _logical_text(
+    report: dict,
+    mapping_path: Path,
+    font_bytes: bytes | None = None,
+    corrections_path: Path | None = None,
+) -> str:
     """Rebuild glyph tokens and restore Bengali logical Unicode order.
 
     The PDF content stream is a visual/shaped glyph stream. We first apply the
     deterministic Bengali reordering pass, then let HarfBuzz shape both the
     original and reordered candidates with the embedded PDF TTF. The candidate
     whose resulting visual GIDs best match the PDF's original CID/GID sequence
-    wins. If HarfBuzz is unavailable, the deterministic visual-order recovery
-    remains the fallback.
+    wins. Finally, a conservative cleanup pass repairs residual artifacts that
+    can survive when the PDF stores an entire visual cluster as one custom glyph.
     """
     mapping = _flat_mapping(mapping_path)
     chunks: list[str] = []
@@ -94,7 +100,8 @@ def _logical_text(report: dict, mapping_path: Path, font_bytes: bytes | None = N
             )
         chunks.append(selected)
 
-    return unicodedata.normalize("NFC", "\n".join(chunks))
+    text = unicodedata.normalize("NFC", "\n".join(chunks))
+    return cleanup_bangla_text(text, corrections_path)
 
 
 def main() -> int:
@@ -103,6 +110,12 @@ def main() -> int:
     parser.add_argument("--page", type=int, required=True)
     parser.add_argument("--mapping", type=Path, default=Path("custom_glyph_map.json"))
     parser.add_argument("--learned", type=Path, default=Path("learned_glyph_map.json"))
+    parser.add_argument(
+        "--corrections",
+        type=Path,
+        default=Path("data/bangla_corrections.json"),
+        help="confirmed residual Bengali word corrections JSON",
+    )
     parser.add_argument("--review", action="store_true")
     parser.add_argument("--gid", type=int, help="review only one CID/GID")
     parser.add_argument("--text", type=Path)
@@ -131,7 +144,7 @@ def main() -> int:
             report = analyze_page_direct(args.pdf, args.page, mapping_path)
 
         font_bytes = next((raw for _resource, _base, raw in embedded_fonts(pdf, args.page)), None)
-        text = _logical_text(report, mapping_path, font_bytes)
+        text = _logical_text(report, mapping_path, font_bytes, args.corrections)
     finally:
         try:
             mapping_path.unlink(missing_ok=True)
