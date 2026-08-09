@@ -15,6 +15,8 @@ from .learned_mapping import font_key, load_database
 OBJ_RE = re.compile(rb"(?ms)(\d+)\s+(\d+)\s+obj\s*(.*?)\s*endobj")
 REF_RE = re.compile(rb"(\d+)\s+(\d+)\s+R")
 HEX_RE = re.compile(rb"<([0-9A-Fa-f]+)>")
+GLYPH_UNI_RE = re.compile(r"uni([0-9A-Fa-f]{4,6})")
+GLYPH_U_RE = re.compile(r"(?:^|[._])u([0-9A-Fa-f]{4,6})(?:$|[._])")
 
 
 def object_map(pdf: bytes) -> dict[int, bytes]:
@@ -118,15 +120,62 @@ def embedded_fonts(pdf: bytes, page: int):
             yield resource.decode("latin1"), str(info["base_font"]), raw
 
 
+def _glyph_name_text(name: str) -> str | None:
+    """Decode Unicode encoded in a TrueType glyph name.
+
+    EC embedded fonts often have a perfectly useful glyph name such as
+    ``uni09C7`` even though that glyph has no entry in the font cmap because
+    the PDF is using Identity-H/CID addressing.  Therefore cmap-only lookup
+    is insufficient.  We also understand compound names such as
+    ``uni0995_uni09CD_uni09A4`` and ``uni0995.1``.
+    """
+    if name in {".notdef", "space"}:
+        return None
+
+    # Adobe-style names: uni09A8_uni09CD_uni09A4, uni09A8.123, etc.
+    parts = re.findall(r"uni([0-9A-Fa-f]{4,6})", name)
+    if parts:
+        try:
+            return "".join(chr(int(part, 16)) for part in parts)
+        except ValueError:
+            pass
+
+    # Some fonts use u09A8 or u1D00 style names.
+    match = GLYPH_U_RE.search(name)
+    if match:
+        try:
+            return chr(int(match.group(1), 16))
+        except ValueError:
+            return None
+    return None
+
+
 def ttf_gid_map(font_bytes: bytes) -> dict[int, str]:
+    """Return GID -> Unicode using BOTH cmap and glyph-name evidence.
+
+    The glyph-name fallback is essential for this EC font family: ordinary
+    Bengali glyphs are Unicode-named but the embedded font's cmap does not
+    necessarily expose those names to fontTools' best-cmap selection.
+    Manual learned mappings still override this fallback later.
+    """
     font = TTFont(BytesIO(font_bytes), lazy=False)
     try:
-        reverse = font.getReverseGlyphMap()
         out: dict[int, str] = {}
+        glyph_order = font.getGlyphOrder()
+        reverse = font.getReverseGlyphMap()
+
+        # 1. Explicit Unicode cmap.
         for cp, name in font.getBestCmap().items():
             gid = reverse.get(name)
             if gid is not None:
                 out.setdefault(gid, chr(cp))
+
+        # 2. Unicode encoded in glyph names.  Do this for every GID because
+        # Identity-H PDF fonts may have no usable Unicode cmap at all.
+        for gid, name in enumerate(glyph_order):
+            text = _glyph_name_text(name)
+            if text:
+                out.setdefault(gid, text)
         return out
     finally:
         font.close()
