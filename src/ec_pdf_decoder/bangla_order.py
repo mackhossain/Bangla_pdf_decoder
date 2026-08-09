@@ -68,9 +68,8 @@ def _move_prebase_marks(tokens: list[str], *, aggressive: bool) -> None:
             i += 1
             continue
 
-        # In a two-part vowel, ে/ৈ followed immediately by ্? no; the common
-        # Bengali visual pair is ে+া or ে+ৗ. Keep that pair attached to the
-        # current base rather than moving the first half to the next base.
+        # ে/ৈ + া/ৗ is already a two-part vowel attached to the preceding
+        # base. Do not move the first half independently.
         if i + 1 < len(tokens) and tokens[i] in {"ে", "ৈ"} and tokens[i + 1] in {"া", "ৗ"}:
             i += 2
             continue
@@ -79,8 +78,6 @@ def _move_prebase_marks(tokens: list[str], *, aggressive: bool) -> None:
         j = i
         marks: list[str] = []
         while j < len(tokens) and tokens[j] in PREBASE_MARKS:
-            # A second mark that is part of a two-part vowel belongs to the
-            # first mark and must not be moved independently.
             if (
                 j + 1 < len(tokens)
                 and tokens[j] in {"ে", "ৈ"}
@@ -156,7 +153,13 @@ def _collect_marks(tokens: Sequence[str], start: int) -> tuple[list[str], int]:
         if token not in BENGALI_MARKS:
             break
         if token in VOWEL_SIGNS:
+            # The only valid two-vowel visual pair we need to reconstruct here
+            # is ে/ৈ followed by া/ৗ (ো/ৌ).
             if seen_vowel:
+                if marks and marks[-1] in {"ে", "ৈ"} and token in {"া", "ৗ"}:
+                    marks.append(token)
+                    i += 1
+                    continue
                 break
             seen_vowel = True
         marks.append(token)
