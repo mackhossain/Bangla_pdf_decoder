@@ -1,185 +1,64 @@
 """EC Bangla PDF decoder with embedded-TTF fallback and interactive learning."""
 from __future__ import annotations
-
-import argparse
-import json
-import os
-import tempfile
-import unicodedata
+import argparse,json,os,tempfile,unicodedata
 from pathlib import Path
-
 from src.ec_pdf_decoder.bangla_cleanup import cleanup_bangla_text
 from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
-from src.ec_pdf_decoder.direct_pdf_fixed import (
-    analyze_page_direct,
-    embedded_fonts,
-    ttf_gid_map,
-)
-from src.ec_pdf_decoder.learned_mapping import font_key, load_database
-from src.ec_pdf_decoder.direct_review import run as review_run
+from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
+from src.ec_pdf_decoder.learned_mapping import font_key,load_database
 from src.ec_pdf_decoder.ai_review import run as ai_review_run
 
+def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)->Path:
+    base=json.loads(legacy_path.read_text(encoding='utf-8')) if legacy_path.exists() else {}; learned=load_database(learned_path); merged={k:dict(v) for k,v in base.items()}
+    for _resource,base_font,raw in embedded_fonts(pdf,page):
+        section=merged.setdefault(base_font,{})
+        for gid,text in ttf_gid_map(raw).items(): section.setdefault(str(gid),text)
+        fkey=font_key(raw,base_font); glyphs=learned.get('fonts',{}).get(fkey,{}).get('glyphs',{})
+        for gid,entry in glyphs.items():
+            if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
+    fd,name=tempfile.mkstemp(prefix='ec_mapping_',suffix='.json'); os.close(fd); path=Path(name); path.write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8'); return path
 
-def _materialize_mapping(pdf: bytes, page: int, legacy_path: Path, learned_path: Path) -> Path:
-    """Build a temporary validated mapping for the direct decoder."""
-    base = json.loads(legacy_path.read_text(encoding="utf-8")) if legacy_path.exists() else {}
-    learned = load_database(learned_path)
-    merged = {k: dict(v) for k, v in base.items()}
-
-    for _resource, base_font, raw in embedded_fonts(pdf, page):
-        section = merged.setdefault(base_font, {})
-        for gid, text in ttf_gid_map(raw).items():
-            section.setdefault(str(gid), text)
-        fkey = font_key(raw, base_font)
-        glyphs = learned.get("fonts", {}).get(fkey, {}).get("glyphs", {})
-        for gid, entry in glyphs.items():
-            if isinstance(entry, dict) and entry.get("confidence", 0) >= 1.0:
-                section[str(gid)] = str(entry.get("text", ""))
-
-    fd, name = tempfile.mkstemp(prefix="ec_mapping_", suffix=".json")
-    os.close(fd)
-    path = Path(name)
-    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
-
-
-def _flat_mapping(mapping_path: Path) -> dict[str, str]:
-    """Flatten the temporary font-scoped mapping for CID/GID reconstruction."""
-    try:
-        data = json.loads(mapping_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    flat: dict[str, str] = {}
-    if not isinstance(data, dict):
-        return flat
-
+def _flat_mapping(mapping_path:Path)->dict[str,str]:
+    try: data=json.loads(mapping_path.read_text(encoding='utf-8'))
+    except (OSError,json.JSONDecodeError): return {}
+    flat={}
+    if not isinstance(data,dict): return flat
     for section in data.values():
-        if not isinstance(section, dict):
-            continue
-        for key, value in section.items():
-            if isinstance(value, str):
-                flat[str(key)] = value
-            elif isinstance(value, dict) and isinstance(value.get("text"), str):
-                flat[str(key)] = value["text"]
+        if not isinstance(section,dict): continue
+        for key,value in section.items():
+            if isinstance(value,str): flat[str(key)]=value
+            elif isinstance(value,dict) and isinstance(value.get('text'),str): flat[str(key)]=value['text']
     return flat
 
-
-def _logical_text(
-    report: dict,
-    mapping_path: Path,
-    font_bytes: bytes | None = None,
-    corrections_path: Path | None = None,
-) -> str:
-    """Rebuild glyph tokens and restore Bengali logical Unicode order."""
-    mapping = _flat_mapping(mapping_path)
-    chunks: list[str] = []
-
-    for operation in report.get("operations", []):
-        cids = [int(value) for value in operation.get("cids", [])]
-        tokens = [mapping.get(str(cid), f"⟦CID:{cid}⟧") for cid in cids]
-
-        original = "".join(tokens)
-        reordered = "".join(
-            restore_bangla_logical_order_tokens(tokens, visual_order=True)
-        )
-
-        if any(token.startswith("⟦CID:") for token in tokens):
-            selected = reordered
-        else:
-            selected, _score = choose_candidate(
-                font_bytes, cids, original, reordered
-            )
+def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corrections_path:Path|None=None)->str:
+    mapping=_flat_mapping(mapping_path); chunks=[]
+    for operation in report.get('operations',[]):
+        cids=[int(value) for value in operation.get('cids',[])]; tokens=[mapping.get(str(cid),f'⟦CID:{cid}⟧') for cid in cids]; original=''.join(tokens); reordered=''.join(restore_bangla_logical_order_tokens(tokens,visual_order=True))
+        if any(token.startswith('⟦CID:') for token in tokens): selected=reordered
+        else: selected,_score=choose_candidate(font_bytes,cids,original,reordered)
         chunks.append(selected)
+    return cleanup_bangla_text(unicodedata.normalize('NFC','\n'.join(chunks)),corrections_path)
 
-    text = unicodedata.normalize("NFC", "\n".join(chunks))
-    return cleanup_bangla_text(text, corrections_path)
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Decode Bangladesh EC Bangla PDF text")
-    parser.add_argument("pdf", type=Path)
-    parser.add_argument("--page", type=int, required=True)
-    parser.add_argument("--mapping", type=Path, default=Path("custom_glyph_map.json"))
-    parser.add_argument("--learned", type=Path, default=Path("learned_glyph_map.json"))
-    parser.add_argument(
-        "--corrections",
-        type=Path,
-        default=Path("data/bangla_corrections.json"),
-        help="confirmed residual Bengali word corrections JSON",
-    )
-    parser.add_argument("--review", action="store_true", help="interactive human glyph review")
-    parser.add_argument("--ai-review", action="store_true", help="AI-assisted glyph review; every save still requires human confirmation")
-    parser.add_argument("--gid", type=int, help="review only one CID/GID")
-    parser.add_argument("--text", type=Path)
-    parser.add_argument("--json", dest="json_path", type=Path)
-    args = parser.parse_args()
-
-    pdf = args.pdf.read_bytes()
-    mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
-    text = ""
-    report: dict = {"missing_cids": []}
+def main()->int:
+    parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text'); parser.add_argument('pdf',type=Path); parser.add_argument('--page',type=int,required=True); parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json')); parser.add_argument('--review',action='store_true'); parser.add_argument('--ai-review',action='store_true'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); args=parser.parse_args()
+    pdf=args.pdf.read_bytes(); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); text=''; report={'missing_cids':[]}
     try:
-        report = analyze_page_direct(args.pdf, args.page, mapping_path)
-
-        # The decoder's report is authoritative. Pass its exact unresolved CID
-        # list to the review workflow so review cannot silently miss a CID.
-        if (args.review or args.ai_review) and report["missing_cids"]:
-            if args.ai_review:
-                ai_review_run(
-                    args.pdf,
-                    args.page,
-                    args.learned,
-                    Path("data/bangla_conjuncts.json"),
-                    args.gid,
-                    list(report["missing_cids"]),
-                )
-                try:
-                    mapping_path.unlink(missing_ok=True)
-                except PermissionError:
-                    pass
-                mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
-                report = analyze_page_direct(args.pdf, args.page, mapping_path)
-
-            if args.review and report["missing_cids"]:
-                review_run(
-                    args.pdf,
-                    args.page,
-                    args.learned,
-                    Path("data/bangla_conjuncts.json"),
-                    args.gid,
-                )
-                try:
-                    mapping_path.unlink(missing_ok=True)
-                except PermissionError:
-                    pass
-                mapping_path = _materialize_mapping(pdf, args.page, args.mapping, args.learned)
-                report = analyze_page_direct(args.pdf, args.page, mapping_path)
-
-        font_bytes = next((raw for _resource, _base, raw in embedded_fonts(pdf, args.page)), None)
-        text = _logical_text(report, mapping_path, font_bytes, args.corrections)
+        report=analyze_page_direct(args.pdf,args.page,mapping_path)
+        if (args.review or args.ai_review) and report['missing_cids']:
+            # Both review modes use the same fixed interactive reviewer.
+            # --review is human/deterministic; --ai-review additionally asks AI.
+            ai_review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),use_ai=args.ai_review)
+            try: mapping_path.unlink(missing_ok=True)
+            except PermissionError: pass
+            mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); report=analyze_page_direct(args.pdf,args.page,mapping_path)
+        font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,args.page)),None); text=_logical_text(report,mapping_path,font_bytes,args.corrections)
     finally:
-        try:
-            mapping_path.unlink(missing_ok=True)
-        except PermissionError:
-            pass
+        try: mapping_path.unlink(missing_ok=True)
+        except PermissionError: pass
+    print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
+    if args.text: args.text.write_text(text+'\n',encoding='utf-8')
+    if args.json_path: args.json_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    return 0 if not report['missing_cids'] else 2
 
-    print(f"PDF: {args.pdf.name}")
-    print(f"PAGE: {args.page}")
-    print(f"MAPPED ENTRIES: {report['tounicode_entries']}")
-    print(f"UNRESOLVED CIDs: {report['missing_cids']}")
-    print("\n# DECODED TEXT")
-    print("=" * 72)
-    print(text)
-
-    if args.text:
-        args.text.write_text(text + "\n", encoding="utf-8")
-    if args.json_path:
-        args.json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return 0 if not report["missing_cids"] else 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=='__main__': raise SystemExit(main())
