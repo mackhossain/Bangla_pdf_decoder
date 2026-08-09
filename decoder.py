@@ -8,7 +8,6 @@ from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.learned_mapping import font_key,load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
-from src.ec_pdf_decoder.ai_review import run as ai_review_run
 
 def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)->Path:
     base=json.loads(legacy_path.read_text(encoding='utf-8')) if legacy_path.exists() else {}; learned=load_database(learned_path); merged={k:dict(v) for k,v in base.items()}
@@ -42,15 +41,12 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
     return cleanup_bangla_text(unicodedata.normalize('NFC','\n'.join(chunks)),corrections_path)
 
 def main()->int:
-    parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text'); parser.add_argument('pdf',type=Path); parser.add_argument('--page',type=int,required=True); parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json')); parser.add_argument('--review',action='store_true'); parser.add_argument('--ai-review',action='store_true'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); args=parser.parse_args()
+    parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text'); parser.add_argument('pdf',type=Path); parser.add_argument('--page',type=int,required=True); parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json')); parser.add_argument('--review',action='store_true'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); args=parser.parse_args()
     pdf=args.pdf.read_bytes(); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); text=''; report={'missing_cids':[]}
     try:
         report=analyze_page_direct(args.pdf,args.page,mapping_path)
-        if (args.review or args.ai_review) and report['missing_cids']:
-            if args.ai_review:
-                ai_review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),use_ai=True)
-            else:
-                review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']))
+        if args.review and report['missing_cids']:
+            review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']))
             try: mapping_path.unlink(missing_ok=True)
             except PermissionError: pass
             mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); report=analyze_page_direct(args.pdf,args.page,mapping_path)
