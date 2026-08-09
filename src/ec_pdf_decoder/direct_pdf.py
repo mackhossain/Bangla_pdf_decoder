@@ -1,11 +1,4 @@
-"""Robust direct parser for EC PDFs whose page dictionaries use indirect Resources.
-
-This module is intentionally independent of the older extraction helpers.  It
-resolves PDF indirect references before reading /Resources, /Font, and the
-embedded FontFile2 stream.  That matters for EC voter PDFs: CIDToGIDMap is
-Identity, so CID == GID, while ordinary glyphs are recoverable from the
-embedded TTF cmap and custom conjuncts have no Unicode cmap entry.
-"""
+"""Robust direct parser for EC PDFs whose page dictionaries use indirect Resources."""
 from __future__ import annotations
 
 import json
@@ -31,11 +24,7 @@ def object_map(pdf: bytes) -> dict[int, bytes]:
 def dict_value(body: bytes | None, key: bytes) -> bytes | None:
     if not body:
         return None
-    m = re.search(
-        rb"/" + re.escape(key) +
-        rb"(?:\s*)?(\[.*?\]|<<.*?>>|\d+\s+\d+\s+R|/[A-Za-z0-9_.+#-]+|[+-]?\d+(?:\.\d+)?)",
-        body, re.S,
-    )
+    m = re.search(rb"/" + re.escape(key) + rb"(?:\s*)?(\[.*?\]|<<.*?>>|\d+\s+\d+\s+R|/[A-Za-z0-9_.+#-]+|[+-]?\d+(?:\.\d+)?)", body, re.S)
     return m.group(1) if m else None
 
 
@@ -76,10 +65,7 @@ def stream_bytes(body: bytes | None) -> bytes | None:
 
 
 def pages(objects: dict[int, bytes]) -> list[tuple[int, bytes]]:
-    return sorted(
-        (n, b) for n, b in objects.items()
-        if re.search(rb"/Type\s*/Page(?:\s|/|>)", b)
-    )
+    return sorted((n, b) for n, b in objects.items() if re.search(rb"/Type\s*/Page(?:\s|/|>)", b))
 
 
 def content_refs(page_body: bytes) -> list[int]:
@@ -96,10 +82,7 @@ def font_refs(objects: dict[int, bytes], resources: bytes | None) -> dict[bytes,
     font_dict = resolve(objects, dict_value(resources, b"Font"))
     if not font_dict:
         return {}
-    return {
-        name: int(ref)
-        for name, ref in re.findall(rb"/(\S+)\s+(\d+)\s+\d+\s+R", font_dict)
-    }
+    return {name: int(ref) for name, ref in re.findall(rb"/(\S+)\s+(\d+)\s+\d+\s+R", font_dict)}
 
 
 def font_info(objects: dict[int, bytes], font_ref: int) -> dict[str, Any]:
@@ -116,15 +99,7 @@ def font_info(objects: dict[int, bytes], font_ref: int) -> dict[str, Any]:
     tu_ref = first_ref(tu_value)
     base = re.search(rb"/BaseFont\s*/([^\s/>]+)", body)
     enc = re.search(rb"/Encoding\s*/([^\s/>]+)", body)
-    return {
-        "font_object": font_ref,
-        "base_font": base.group(1).decode("latin1") if base else "",
-        "encoding": enc.group(1).decode("latin1") if enc else "",
-        "descendant_font": descendant_ref,
-        "font_descriptor": descriptor_ref,
-        "font_file2": ff_ref,
-        "tounicode": tu_ref,
-    }
+    return {"font_object": font_ref, "base_font": base.group(1).decode("latin1") if base else "", "encoding": enc.group(1).decode("latin1") if enc else "", "descendant_font": descendant_ref, "font_descriptor": descriptor_ref, "font_file2": ff_ref, "tounicode": tu_ref}
 
 
 def embedded_fonts(pdf: bytes, page: int):
@@ -201,7 +176,7 @@ def parse_tounicode(data: bytes) -> dict[int, str]:
 
 
 def text_shows(objects: dict[int, bytes], page_body: bytes):
-    from .content import TextShow, extract_text_show_operations
+    from .content import extract_text_show_operations
     found = []
     for number in content_refs(page_body):
         body = objects.get(number)
@@ -239,6 +214,36 @@ def decode_operation(op, mapping: dict[int, str]):
     return "".join(parts), cids, missing
 
 
+def _mapping_section(data: dict[str, Any], base_font: str) -> dict[str, Any]:
+    """Find a manual mapping despite PDF subset-prefix spelling differences."""
+    if not isinstance(data, dict):
+        return {}
+    candidates = [base_font, base_font.lstrip("/")]
+    if "+" in base_font:
+        candidates.append(base_font.split("+", 1)[1])
+    for key in candidates:
+        section = data.get(key)
+        if isinstance(section, dict):
+            return section
+    normalized = base_font.lstrip("/").split("+", 1)[-1]
+    for key, section in data.items():
+        if isinstance(key, str) and key.lstrip("/").split("+", 1)[-1] == normalized and isinstance(section, dict):
+            return section
+    return {}
+
+
+def _apply_mapping_section(mappings: dict[int, str], section: dict[str, Any]) -> None:
+    for key, value in section.items():
+        try:
+            gid = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, str):
+            mappings[gid] = value
+        elif isinstance(value, dict) and isinstance(value.get("text"), str):
+            mappings[gid] = value["text"]
+
+
 def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | None = None) -> dict[str, Any]:
     pdf = pdf_path.read_bytes()
     objects = object_map(pdf)
@@ -249,9 +254,11 @@ def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | N
     resources = page_resources(objects, page_body)
     mappings: dict[int, str] = {}
     fonts_out: dict[str, Any] = {}
-    override_data = {}
+    override_data: dict[str, Any] = {}
     if mapping_path and mapping_path.exists():
-        override_data = json.loads(mapping_path.read_text(encoding="utf-8"))
+        loaded = json.loads(mapping_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            override_data = loaded
 
     for resource, ref in font_refs(objects, resources).items():
         info = font_info(objects, ref)
@@ -261,13 +268,12 @@ def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | N
             data = stream_bytes(objects.get(tu_ref))
             if data:
                 mappings.update(parse_tounicode(data))
+
         base = str(info.get("base_font", ""))
-        for k, v in override_data.get(base, {}).items():
-            try:
-                mappings[int(k)] = str(v)
-            except (TypeError, ValueError):
-                pass
-        # Embedded TTF cmap is the authoritative fallback for ordinary glyphs.
+        # Manual/custom mappings override ToUnicode.  This is required for
+        # EC's custom conjunct glyphs such as CID 207 and CID 290.
+        _apply_mapping_section(mappings, _mapping_section(override_data, base))
+
         ff_ref = info.get("font_file2")
         if isinstance(ff_ref, int):
             raw = stream_bytes(objects.get(ff_ref))
@@ -281,23 +287,10 @@ def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | N
         decoded, cids, missing = decode_operation(op, mappings)
         for x in cids:
             used[x] = used.get(x, 0) + 1
-        shows.append({
-            "content_object": number,
-            "operator": op.operator.decode("latin1"),
-            "cids": cids,
-            "decoded": decoded,
-            "missing_cids": missing,
-        })
-    return {
-        "pdf": str(pdf_path),
-        "page": page_number,
-        "page_object": page_object,
-        "fonts": fonts_out,
-        "tounicode_entries": len(mappings),
-        "used_cids": {str(k): v for k, v in sorted(used.items())},
-        "missing_cids": sorted(x for x in used if x not in mappings),
-        "operations": shows,
-    }
+        shows.append({"content_object": number, "operator": op.operator.decode("latin1"), "cids": cids, "decoded": decoded, "missing_cids": missing})
+
+    missing_cids = sorted(x for x in used if x not in mappings)
+    return {"pdf": str(pdf_path), "page": page_number, "page_object": page_object, "fonts": fonts_out, "tounicode_entries": len(mappings), "used_cids": {str(k): v for k, v in sorted(used.items())}, "missing_cids": missing_cids, "operations": shows}
 
 
 def used_gids(pdf: bytes, page: int) -> list[int]:
