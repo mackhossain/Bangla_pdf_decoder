@@ -15,7 +15,7 @@ from typing import Any
 from .bangla_candidates import generate_candidates
 from .direct_pdf import embedded_fonts, ttf_gid_map, used_gids
 from .learned_mapping import font_key, glyph_key, load_database, remember_mapping, save_database
-from .direct_review import _stats, _svg, rank
+from .direct_review import _svg, rank
 
 
 def _glyph_png(font_path: Path, gid: int) -> bytes:
@@ -42,7 +42,7 @@ def _ask_ai(image: bytes, *, gid: int, base_font: str, candidates: list[str],
     candidate_text = "\n".join(f"- {c}" for c in candidates)
     deterministic = "\n".join(
         f"- {text!r}: shape_score={score:.6f}, shaped_gids={gids}"
-        for score, text, gids in ranked[:12]
+        for score, text, gids in ranked[:20]
     )
     prompt = f"""You are reviewing ONE unresolved Bengali glyph from a Bangladesh Election Commission PDF.
 
@@ -50,8 +50,8 @@ The embedded font is {base_font!r}. The unresolved CID/GID is {gid}.
 The image is the exact outline of that glyph from the embedded TrueType font.
 
 Your job is to identify the most likely Unicode character/string represented by THIS SINGLE GLYPH.
-Do not infer a word from generic Bengali spelling alone. Prefer the actual glyph shape.
-Do not claim certainty you do not have.
+Do not infer a word from generic Bengali spelling alone. Prefer the actual glyph shape and the
+font/HarfBuzz evidence below. Do not claim certainty you do not have.
 Only choose from the supplied candidate strings. If none fits, return an empty list.
 
 Candidate strings:
@@ -108,9 +108,14 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
     """Run AI-assisted interactive review for unresolved custom glyphs."""
     pdf = pdf_path.read_bytes()
     db = load_database(db_path)
-    candidates = generate_candidates(candidate_path)
-    candidates += ["ঁ","ং","ঃ","া","ি","ী","ু","ূ","ৃ","ে","ৈ","ো","ৌ","্","ৗ","ড়","ঢ়","য়"]
-    candidates = sorted(set(candidates), key=lambda x: (len(x), x))
+
+    # Keep the AI prompt bounded. The deterministic ranker still considers the
+    # complete generated candidate set, while the AI sees the curated database
+    # plus the best font/HarfBuzz candidates for this particular glyph.
+    curated = generate_candidates(candidate_path, include_generated=False)
+    curated += ["ঁ","ং","ঃ","া","ি","ী","ু","ূ","ৃ","ে","ৈ","ো","ৌ","্","ৗ","ড়","ঢ়","য়"]
+    curated = sorted(set(curated), key=lambda x: (len(x), x))
+    all_candidates = generate_candidates(candidate_path)
 
     for _resource, base_font, raw in embedded_fonts(pdf, page):
         cmap_gids = set(ttf_gid_map(raw))
@@ -126,7 +131,11 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
                 if existing.get("confidence", 0) >= 1.0:
                     continue
 
-                ranked = rank(font_path, gid, candidates)
+                ranked = rank(font_path, gid, all_candidates)
+                ai_candidates = sorted(
+                    set(curated + [row[1] for row in ranked[:100]]),
+                    key=lambda x: (len(x), x),
+                )
                 print(f"\n{'=' * 64}")
                 print(f"AI GLYPH REVIEW — CID/GID {gid} — font {base_font}")
                 print(f"{'=' * 64}")
@@ -135,7 +144,7 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path,
                 try:
                     image = _glyph_png(font_path, gid)
                     ai_rows = _ask_ai(image, gid=gid, base_font=base_font,
-                                      candidates=candidates, ranked=ranked)
+                                      candidates=ai_candidates, ranked=ranked)
                 except Exception as exc:
                     print(f"AI REVIEW UNAVAILABLE: {exc}")
                     ai_rows = []
