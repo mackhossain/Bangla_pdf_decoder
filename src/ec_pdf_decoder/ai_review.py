@@ -34,7 +34,7 @@ def _ask_ai(image:bytes,*,gid:int,base_font:str,candidates:list[str],ranked):
 
 def run(pdf_path:Path,page:int,db_path:Path,candidate_path:Path,only_gid:int|None=None,unresolved_cids:list[int]|None=None,use_ai:bool=True)->None:
     pdf=pdf_path.read_bytes(); db=load_database(db_path)
-    curated=generate_candidates(candidate_path,include_generated=False)+['ঁ','ং','ঃ','া','ি','ী','ু','ূ','ৃ','ে','ৈ','ো','ৌ','্','ৗ','ড়','ঢ়','য়']; curated=sorted(set(curated),key=lambda x:(len(x),x)); all_candidates=generate_candidates(candidate_path)
+    curated=generate_candidates(candidate_path,include_generated=False)+['ঁ','ং','ঃ','া','ি','ী','ু','ূ','ৃ','ে','ৈ','ো','ৌ','্','ৗ','ড়','ঢ়','য়']; curated=sorted(set(curated),key=lambda x:(len(x),x)); all_candidates=curated
     targets=list(unresolved_cids or [])
     if only_gid is not None: targets=[g for g in targets if g==only_gid]
     found=False
