@@ -30,6 +30,38 @@ Save diagnostics:
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --json page3.json
 ```
 
+## Performance and profiling
+
+The decoder caches expensive work in memory so the embedded font is not repeatedly fingerprinted from scratch for every page. The learned mapping database is also cached by file version and refreshed automatically after a new manual mapping is saved.
+
+The most important optimization is the embedded-font glyph fingerprint cache: the complete fingerprint map is calculated once for an exact embedded-font byte identity and reused on later pages/PDFs that contain the same font bytes.
+
+An optional profiling mode shows where time is spent without changing decoding behavior:
+
+```cmd
+python decoder.py 261823_com_4441_female_without_photo_247_2025-11-24.pdf --page 13 --profile
+```
+
+Typical output includes:
+
+```text
+PROFILE — PAGE 13
+──────────────────────────────────────────
+Learned Map Load           0.001 s
+Pdf Read                   0.001 s
+Font Cache                 0.000 s
+Mapping Materialize        0.094 s
+Page Analysis              0.018 s
+Font Bytes Lookup          0.001 s
+Text Processing            0.027 s
+Total                      0.143 s
+──────────────────────────────────────────
+```
+
+The exact timing depends on the PDF, machine, and cache state. In testing on a 247-page EC PDF, page decoding dropped from roughly 8 seconds/page to roughly 0.14 seconds/page after the glyph-fingerprint cache was introduced.
+
+`--profile` is diagnostic only and does not alter the decoded result or the manual-review workflow.
+
 ## Use from another Python program
 
 The decoder can also be imported directly. The public `decode_pdf()` function uses the same decoding pipeline as the command-line program.
@@ -139,9 +171,17 @@ The optional `--text OUTPUT.txt` flag can be combined with `--all-pages` to save
 python decoder.py FILE.pdf --all-pages --review --text all_pages.txt
 ```
 
+For profiling all-pages processing, `--profile` can be added:
+
+```cmd
+python decoder.py FILE.pdf --all-pages --profile
+```
+
 ## Persistent mapping data
 
 `learned_glyph_map.json` is the main persistent knowledge base. Confirmed entries include the embedded-font identity, GID, Unicode text, glyph fingerprint, confidence, and source.
+
+The decoder keeps the learned database in RAM during decoding and automatically invalidates the cache when the mapping file changes. This avoids repeatedly parsing the growing JSON file for every page while still making newly saved mappings available immediately.
 
 `custom_glyph_map.json` contains the existing/legacy deterministic PDF mappings and remains part of the decoding path.
 
