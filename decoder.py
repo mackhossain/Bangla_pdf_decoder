@@ -27,22 +27,25 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)-
     for _resource,base_font,raw in embedded_fonts(pdf,page):
         section=merged.setdefault(base_font,{})
         for gid,text in ttf_gid_map(raw).items(): section.setdefault(str(gid),text)
-        fkey=font_key(raw,base_font)
-        glyphs=learned.get('fonts',{}).get(fkey,{}).get('glyphs',{})
         fd,font_name=tempfile.mkstemp(prefix='ec_font_',suffix='.ttf'); os.close(fd); font_path=Path(font_name); font_path.write_bytes(raw)
         try:
+            glyphs=learned.get('fonts',{}).get(font_key(raw,base_font),{}).get('glyphs',{})
             for gid,entry in glyphs.items():
                 if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
-            # Reuse a confirmed mapping when this PDF has the same actual glyph outline,
-            # even if the new subset/font assigned it a different CID/GID.
-            for gid in range(len(__import__('fontTools.ttLib').ttLib.TTFont(str(font_path),lazy=False).getGlyphOrder())):
-                key=str(gid)
-                if key in section: continue
-                try: gkey=glyph_key(font_path,gid); match=find_by_glyph_fingerprint(learned,gkey)
-                except Exception: continue
-                if match is not None: section[key]=str(match['text'])
-        finally:
-            font_path.unlink(missing_ok=True)
+            font=None
+            try:
+                from fontTools.ttLib import TTFont
+                font=TTFont(str(font_path),lazy=False)
+                glyph_count=len(font.getGlyphOrder())
+                for gid in range(glyph_count):
+                    key=str(gid)
+                    if key in section: continue
+                    try: gkey=glyph_key(font_path,gid); match=find_by_glyph_fingerprint(learned,gkey)
+                    except Exception: continue
+                    if match is not None: section[key]=str(match['text'])
+            finally:
+                if font is not None: font.close()
+        finally: font_path.unlink(missing_ok=True)
     fd,name=tempfile.mkstemp(prefix='ec_mapping_',suffix='.json'); os.close(fd); path=Path(name); path.write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8'); return path
 
 
@@ -85,7 +88,7 @@ def main()->int:
     try:
         report=analyze_page_direct(args.pdf,args.page,mapping_path)
         if args.review and report['missing_cids']:
-            review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']))
+            review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),report.get('operations',[]))
             try: mapping_path.unlink(missing_ok=True)
             except PermissionError: pass
             mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); report=analyze_page_direct(args.pdf,args.page,mapping_path)
