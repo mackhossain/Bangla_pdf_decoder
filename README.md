@@ -1,82 +1,129 @@
-# EC PDF Decoder
+# EC PDF Bangla Decoder
 
-A deterministic, non-OCR decoder for Bangladesh Election Commission voter-list PDFs.
+A local, deterministic decoder and manual reviewer for Bangladesh Election Commission (EC) voter-list PDFs that use embedded/subsetted Bangla TrueType fonts.
 
-## Production decoder
+## Main workflow
+
+Decode a page:
 
 ```cmd
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3
 ```
 
-Write Unicode text:
+Save decoded Unicode text:
 
 ```cmd
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --text page3.txt
 ```
 
-Write diagnostics:
+Save diagnostics:
 
 ```cmd
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --json page3.json
 ```
 
-## Interactive glyph learning
+## Manual glyph review
 
-When a PDF contains custom CIDs/GIDs that are not yet mapped, run:
-
-```cmd
-python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --review
-```
-
-The learner:
-
-1. extracts the embedded TrueType font from the PDF;
-2. identifies the actual custom GID used by the page;
-3. generates Bangla conjunct and sign candidates;
-4. uses HarfBuzz shaping when available to find exact GSUB matches;
-5. ranks the remaining candidates using glyph geometry;
-6. opens an HTML visual comparison showing the real embedded PDF glyph and candidate renderings in the same font;
-7. accepts a candidate by number, skips it with `S`, advances with `N`, or exits with `Q`;
-8. stores a confirmed answer at confidence `1.0` in `learned_glyph_map.json`.
-
-Review a single glyph:
+When a page contains genuinely unresolved CID/GID values:
 
 ```cmd
-python review_mappings.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --gid 290
+python decoder.py 261825_com_463_male_without_photo_26_2025-11-24.pdf --page 1 --review
 ```
 
-The learned database is scoped by the SHA-256 fingerprint of the embedded font, not by CID alone. This is important because CID 290 in another embedded font is not guaranteed to mean `ন্ত`.
+The production reviewer:
 
-## Existing validated mappings
+1. extracts the embedded Bangla TrueType font;
+2. uses the PDF's own `ToUnicode` mappings first;
+3. reuses confirmed mappings for the exact embedded-font fingerprint;
+4. reuses unambiguous confirmed glyph fingerprints across different PDFs;
+5. repairs already-known glyphs in the review line before creating the visual;
+6. creates **one self-contained HTML review file** for the genuinely unresolved target;
+7. renders the complete line from the exact embedded PDF glyph outlines and highlights the target CID/GID in red;
+8. accepts an exact Unicode string entered in the console and saves it at confidence `1.0`;
+9. deletes the temporary HTML automatically after a successful save.
 
-The repository currently contains evidence-backed mappings for the inspected target font:
+Only genuinely unresolved glyphs remain as `⟦CID:n⟧` markers in the review text. A CID number alone is never treated as globally meaningful because subsetted PDF fonts can reuse CID/GID numbers for different glyphs.
+
+### Review commands
 
 ```text
-CID/GID 207 -> ে
-CID/GID 290 -> ন্ত
+M = enter the exact Unicode character/string
+N = move to the next unresolved glyph
+S = skip the current glyph
+Q = quit and keep all saved mappings
 ```
 
-These remain in `custom_glyph_map.json`. New user-confirmed mappings are stored separately in `learned_glyph_map.json` and are automatically materialized into the decoder for the matching embedded font.
+There is no AI/API requirement for the production review workflow.
 
-## Bangla conjunct candidates
+## Persistent mapping data
 
-`data/bangla_conjuncts.json` contains a curated high-value Bangla conjunct list. The candidate generator also creates pairwise consonant + virama + consonant sequences and selected triple clusters. Unicode models Bangla conjuncts as sequences using U+09CD VIRAMA rather than as a separate Unicode character. See the Unicode Standard's Bangla rendering description for this model.
+`learned_glyph_map.json` is the main persistent knowledge base. Confirmed entries include the embedded-font identity, GID, Unicode text, glyph fingerprint, confidence, and source.
 
-## Accuracy policy
+`custom_glyph_map.json` contains the existing/legacy deterministic PDF mappings and remains part of the decoding path.
 
-The decoder never silently converts an unknown custom glyph to a guessed Unicode character. An unresolved CID is reported explicitly. A mapping becomes automatic only after deterministic PDF evidence or explicit user confirmation. User confirmation is stored with confidence `1.0` and tied to the exact embedded font fingerprint.
+Lookup is intentionally conservative:
 
-## Low-level tools
+```text
+PDF ToUnicode / exact font mapping
+        ↓
+confirmed learned mapping for the same font
+        ↓
+unambiguous learned glyph fingerprint
+        ↓
+manual review only if still unresolved
+```
 
-The existing diagnostic tools remain available, including:
+The decoder does not silently guess an unknown glyph.
+
+## Bengali text handling
+
+The project includes Bengali logical-order restoration, NFC normalization, cleanup/corrections, and HarfBuzz-based shaping/candidate logic used by the decoding pipeline.
+
+Relevant data files include:
+
+```text
+data/bangla_conjuncts.json
+data/bangla_corrections.json
+```
+
+## Optional Unicode TTF generation
+
+The repository also contains the optional TTF generator:
 
 ```cmd
-python decode_pdf.py FILE.pdf --page 3
-python -m src.ec_pdf_decoder.extract FILE.pdf --page 3 --mapping custom_glyph_map.json --json page3_analysis.json
+python decoder.py --generate-ttf
 ```
 
-The old `analyze_custom_context.py` workflow is still useful for inspecting raw CID context, but the new learner is the recommended path for resolving unknown custom glyphs.
+It builds from confirmed mappings and a cached embedded Bangla TTF. If the source font has not yet been cached, first run the normal decoder once on an EC PDF so the embedded `FontFile2` is saved under `data/embedded_fonts/`.
+
+The output is:
+
+```text
+EC_Bangla_Unicode.ttf
+```
+
+This is an optional utility; the normal PDF decoding and manual-review workflow does not depend on it.
+
+## Low-level diagnostics
+
+The repository retains low-level extraction/diagnostic utilities for troubleshooting unusual PDFs, including `decode_pdf.py`, `analyze_custom_context.py`, and the modules under `src/ec_pdf_decoder/`.
+
+The normal production entry point is `decoder.py`.
+
+## Generated and local files
+
+Do not commit real voter PDFs, generated review HTML, extracted/generated TTFs, temporary text/JSON output, SVG/debug artifacts, Python caches, credentials, or API keys. Project-specific ignore rules are included in `.gitignore`.
+
+## Installation
+
+Python 3.10+ is recommended.
+
+```cmd
+python -m pip install -r requirements.txt
+```
+
+The runtime dependencies are intentionally limited to the packages used by the current decoder and shaping/TTF pipeline.
 
 ## Privacy
 
-Election/voter PDFs can contain sensitive personal information. Do not commit real voter PDFs, voter databases, credentials, or access tokens to the repository.
+Election/voter PDFs can contain sensitive personal information. Keep real voter PDFs and generated personal-data output outside the Git repository.
