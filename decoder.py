@@ -6,6 +6,7 @@ from src.ec_pdf_decoder.bangla_cleanup import cleanup_bangla_text
 from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
+from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_key,find_by_glyph_fingerprint,load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
@@ -72,10 +73,14 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
     return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
 
 
-def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None)->str:
-    """Decode one PDF page and return the final Bengali Unicode text."""
+def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False):
+    """Decode one PDF page and return final Bengali Unicode text.
+
+    With return_report=True, returns (text, analysis_report). The default
+    remains the original string-only API.
+    """
     pdf_path=Path(pdf_path); mapping_path=Path(mapping_path); learned_path=Path(learned_path); corrections_path=Path(corrections_path)
-    pdf=pdf_path.read_bytes(); _cache_embedded_ttf(pdf,page)
+    pdf=read_pdf_bytes(pdf_path); _cache_embedded_ttf(pdf,page)
     materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report={'missing_cids':[]}
     try:
         report=analyze_page_direct(pdf_path,page,materialized)
@@ -85,7 +90,8 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
             except PermissionError: pass
             materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report=analyze_page_direct(pdf_path,page,materialized)
         font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,page)),None)
-        return _logical_text(report,materialized,font_bytes,corrections_path)
+        text=_logical_text(report,materialized,font_bytes,corrections_path)
+        return (text,report) if return_report else text
     finally:
         try: materialized.unlink(missing_ok=True)
         except PermissionError: pass
@@ -115,11 +121,8 @@ def main()->int:
         for page in range(1,page_count+1):
             print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
             try:
-                text=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid)
+                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True)
                 all_text.append(text)
-                pdf=args.pdf.read_bytes(); materialized=_materialize_mapping(pdf,page,args.mapping,args.learned)
-                try: report=analyze_page_direct(args.pdf,page,materialized)
-                finally: materialized.unlink(missing_ok=True)
                 missing=report.get('missing_cids',[]); any_unresolved |= bool(missing)
                 print(f'PAGE: {page} | MAPPED ENTRIES: {report.get("tounicode_entries",0)} | UNRESOLVED CIDs: {missing}',flush=True)
                 print(text,flush=True)
@@ -131,12 +134,9 @@ def main()->int:
         if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
         return 2 if any_unresolved else 0
     try:
-        text=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid)
+        text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True)
     except Exception as exc:
         print(f'DECODE FAILED: {exc}'); return 1
-    pdf=args.pdf.read_bytes(); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned)
-    try: report=analyze_page_direct(args.pdf,args.page,mapping_path)
-    finally: mapping_path.unlink(missing_ok=True)
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
     if args.json_path: args.json_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
