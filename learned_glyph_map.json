@@ -962,6 +962,123 @@
           "glyph_fingerprint": "glyph:7c8194be880cf6df55cff9e66771a36102b211cc3817942674e08f0ba369faa5",
           "confidence": 1.0,
           "source": "user_confirmed"
+        },
+        "389": {
+          "gid": 389,
+          "text": "হৃ",
+          "unicode": [
+            "U+09B9",
+            "U+09C3"
+          ],
+          "glyph_fingerprint": "glyph:ebbb9c21db73939efb97e94112791b146d7a308759beff93450c7c50944fa50e",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "354": {
+          "gid": 354,
+          "text": "ষ্ট্র",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+099F",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:3528794a1431de8afe62c91029af77b36a61c272b82537665495e63331d42385",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "369": {
+          "gid": 369,
+          "text": "স্ত্র",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09A4",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:c23968874f489f885fac88009a1fd4c01b50c28d2bcf36f23eadcc5cc287ac35",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        }
+      }
+    },
+    "TSHXHF+Bangla:35bb5ce1f340ca4943c39e7853f2a11b3ccd003f26ed7e8c4f88208ecabcb2f8": {
+      "base_font": "TSHXHF+Bangla",
+      "glyphs": {
+        "255": {
+          "gid": 255,
+          "text": "ট্ট",
+          "unicode": [
+            "U+099F",
+            "U+09CD",
+            "U+099F"
+          ],
+          "glyph_fingerprint": "glyph:b641482a9ac9090ab50de9f8b13d404fb34bf99e8edd1a9c035c55218907f758",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "238": {
+          "gid": 238,
+          "text": "চ্চ",
+          "unicode": [
+            "U+099A",
+            "U+09CD",
+            "U+099A"
+          ],
+          "glyph_fingerprint": "glyph:399888c064b17afc3d41bf747dd84ce35115cbf3f056c43e892d4cd84d23e5d4",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "239": {
+          "gid": 239,
+          "text": "চ্ছ",
+          "unicode": [
+            "U+099A",
+            "U+09CD",
+            "U+099B"
+          ],
+          "glyph_fingerprint": "glyph:3411b0ef8c8da20c459f165340d1e3a0f9007f3a094c962d3fe598deef52858e",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "358": {
+          "gid": 358,
+          "text": "স্ক",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+0995"
+          ],
+          "glyph_fingerprint": "glyph:759498de62711100ee2d38824a6f6409e01b2d560ce12b2d7ab94eaf4e47cb0d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "399": {
+          "gid": 399,
+          "text": "ন্দু",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A6",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:ec05ab6a0677298b8562a02dc0b6a128a15b79a42258fbbe7a77c2e0ca53bb76",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "212": {
+          "gid": 212,
+          "text": "ক্স",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B8"
+          ],
+          "glyph_fingerprint": "glyph:167c9b20e76f6e73fff466fb4e45d58bf160fad46179e575b444e0dc9009cc23",
+          "confidence": 1.0,
+          "source": "user_confirmed"
         }
       }
     }
