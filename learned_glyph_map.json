@@ -1079,6 +1079,415 @@
           "glyph_fingerprint": "glyph:167c9b20e76f6e73fff466fb4e45d58bf160fad46179e575b444e0dc9009cc23",
           "confidence": 1.0,
           "source": "user_confirmed"
+        },
+        "282": {
+          "gid": 282,
+          "text": "দ্ম",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:648b559e20d438416883ff8d9b37e3d1dd6ae5b08efeb190d37a2b941c40299a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "209": {
+          "gid": 209,
+          "text": "ক্ক",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+0995"
+          ],
+          "glyph_fingerprint": "glyph:05ec86cb1fec0c0b12ea9ed3fed3c2fb92898be1f05845e024c80b0dc6a44d86",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "0": {
+          "gid": 0,
+          "text": "?",
+          "unicode": [
+            "U+003F"
+          ],
+          "glyph_fingerprint": "glyph:1715f2f3a9dfcfb4fc1c97296e5d4f261abc94f02b8fd0599b910cb73bb253e5",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "272": {
+          "gid": 272,
+          "text": "ত্ন",
+          "unicode": [
+            "U+09A4",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:f1552fb565d1760b38131c4130301b732a07af9ad094701ac93c09637a93f19d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "214": {
+          "gid": 214,
+          "text": "ক্ল",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B2"
+          ],
+          "glyph_fingerprint": "glyph:9db9fa7df06b5ed99bf55704334a356033cedef73b6664f70e6c92686b116182",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "142": {
+          "gid": 142,
+          "text": "ফ্",
+          "unicode": [
+            "U+09AB",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:aa06c7655a83e3e875d4f8abceb187405373b56d853d13f7199d26b82dac2ccc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "123": {
+          "gid": 123,
+          "text": "গ্",
+          "unicode": [
+            "U+0997",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:cbea364375c2ef97efaf33d2bc92b36ead8bef7659ab6ef243f7f7cbdb98707b",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "162": {
+          "gid": 162,
+          "text": "ন্",
+          "unicode": [
+            "U+09A8",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:ecd74bb19834b1d16c52f83460790189adbf2649d057ad7acd9171bf5d1d33ee",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "168": {
+          "gid": 168,
+          "text": "স্",
+          "unicode": [
+            "U+09B8",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:3181bb0e5b3be3d5e0bd671f1b4860d9c569a8127fbbbea6a7c5c335ea635105",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "318": {
+          "gid": 318,
+          "text": "ব্ল",
+          "unicode": [
+            "U+09AC",
+            "U+09CD",
+            "U+09B2"
+          ],
+          "glyph_fingerprint": "glyph:3ccfc98a620004989c93438da8def1e0db70997901ff3b55317b2d48db151e35",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "360": {
+          "gid": 360,
+          "text": "স্ট",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+099F"
+          ],
+          "glyph_fingerprint": "glyph:7e4ca380e26f7b584c4e36b7038078c92c73d513bc25651e061fc95e17cdc498",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "351": {
+          "gid": 351,
+          "text": "ষ্ঠ",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+09A0"
+          ],
+          "glyph_fingerprint": "glyph:c6c7f78256c46d9cbc7df403fc9e80c94250598a5e5f06e62e950bc7cc8d2f71",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "224": {
+          "gid": 224,
+          "text": "গ্ধ",
+          "unicode": [
+            "U+0997",
+            "U+09CD",
+            "U+09A7"
+          ],
+          "glyph_fingerprint": "glyph:5f09257203c826ae0282da2d0e0275714991f9a34ddfbe36538f4f693963ded7",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "320": {
+          "gid": 320,
+          "text": "ভ্র",
+          "unicode": [
+            "U+09AD",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:33c47d262f9f942953bbaaff996dcd859049e42ff04052a7f06f2ce8a6ab7b10",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "194": {
+          "gid": 194,
+          "text": "য়",
+          "unicode": [
+            "U+09DF"
+          ],
+          "glyph_fingerprint": "glyph:7aaa393f9b7251b20a2c8d7a9a7bcd7441a65cc73d37d4d5099d8c1dcb0ba76c",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "382": {
+          "gid": 382,
+          "text": "ন্ত",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:7c85344a8674d8e77b5736268830ddaae4c3615b1e3e33c02ae901b4d7b3db3a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "225": {
+          "gid": 225,
+          "text": "গ্ন",
+          "unicode": [
+            "U+0997",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:b8111832f51f6bdd1841f555b9324a34ddbaf30ab01aa77df66f723b41063a1c",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "380": {
+          "gid": 380,
+          "text": "হ্য",
+          "unicode": [
+            "U+09B9",
+            "U+09CD",
+            "U+09AF"
+          ],
+          "glyph_fingerprint": "glyph:4d3534e8e6df2dd600f94de66e01f653a3f10d168e7e474a9a0278280d7058f2",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "306": {
+          "gid": 306,
+          "text": "প্প",
+          "unicode": [
+            "U+09AA",
+            "U+09CD",
+            "U+09AA"
+          ],
+          "glyph_fingerprint": "glyph:8caf4bd9f619a65f601054bfa10cbc857a5ecb505e791b4c1f30aed2150f765a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "326": {
+          "gid": 326,
+          "text": "ম্র",
+          "unicode": [
+            "U+09AE",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:18fa32211ad07c7e52aa898d0b4a4e77397d4bc76721cae92f8fce0a05aeeada",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "250": {
+          "gid": 250,
+          "text": "জ্ব",
+          "unicode": [
+            "U+099C",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:5b9196bf4054b0d3618a2920f235ff2a5c6285bec6cd293d8bca2cb3fde2c179",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "138": {
+          "gid": 138,
+          "text": "দ্",
+          "unicode": [
+            "U+09A6",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:bdb859bcb0107c274bd6e79f80547634d095da76cda362b460fb38e92a800c69",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "312": {
+          "gid": 312,
+          "text": "ফ্ল",
+          "unicode": [
+            "U+09AB",
+            "U+09CD",
+            "U+09B2"
+          ],
+          "glyph_fingerprint": "glyph:fc109d3ed13b66572d4758a624c328f742e19925513a949eccf112e4b3dd43dd",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "335": {
+          "gid": 335,
+          "text": "ল্ড",
+          "unicode": [
+            "U+09B2",
+            "U+09CD",
+            "U+09A1"
+          ],
+          "glyph_fingerprint": "glyph:163e75cf23d9b0636872e7dfd4a80e6dff33abf81396d25dd1fd4e67d1030691",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "352": {
+          "gid": 352,
+          "text": "ষ্ম",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:fe1c7abb169e8a6dd1f30f5a573c4b3786c11ff3bf1df396e33cde942505666d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "398": {
+          "gid": 398,
+          "text": "স্ত",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:6815564edcac7bba108ec56c0f03b1c5569642cff6f01c062bfae773f36f8acc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "145": {
+          "gid": 145,
+          "text": "ম্",
+          "unicode": [
+            "U+09AE",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:f10ac186c57a1a19d630f9831faabbc61e1fe2c4585532a57e5a68e66a9b2ef0",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "321": {
+          "gid": 321,
+          "text": "ম্ন",
+          "unicode": [
+            "U+09AE",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:404b7efb9e0ff2632068dadaa59b9b04d929f41cda559b4bcd622d1e7333a0a8",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "291": {
+          "gid": 291,
+          "text": "ন্থ",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A5"
+          ],
+          "glyph_fingerprint": "glyph:fb9784b4fb271c23cd69a8a289a0d984f5bc93f0554b01b428503e0a4e273e4a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "151": {
+          "gid": 151,
+          "text": "স্",
+          "unicode": [
+            "U+09B8",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:ce68a05b94984ce226059696401d4742a99582cb55eb066fe3d8d629d12295a7",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "362": {
+          "gid": 362,
+          "text": "স্থ",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09A5"
+          ],
+          "glyph_fingerprint": "glyph:2de53ab80563f9a30180df8304d78815261c986f0c4647bd491c5cbab5b5c273",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "221": {
+          "gid": 221,
+          "text": "ক্ব",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:023ef559196ebe58d93eb004c1de165ef8b7fb5625e9fdf27786e2d646818a9a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "263": {
+          "gid": 263,
+          "text": "ন্ড",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A1"
+          ],
+          "glyph_fingerprint": "glyph:a11c33a942def69cd3e2cd300e7d9c07da23ff092d1155f4b90afcd5660060de",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "298": {
+          "gid": 298,
+          "text": "ন্ব",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:708bb6add3afb3028e328cca6e8087a9bceb266338152e32ea29b5f1619a73dc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "310": {
+          "gid": 310,
+          "text": "প্স",
+          "unicode": [
+            "U+09AA",
+            "U+09CD",
+            "U+09B8"
+          ],
+          "glyph_fingerprint": "glyph:32d0c0f5fe2f1a77991f92babf2ae0ad4dd02408855c2999eb94860f2ea5bbdc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
         }
       }
     }
