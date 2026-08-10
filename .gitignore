@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environments
+.venv/
+venv/
+env/
+
+# Decoder/review generated files
+glyph_review_*.html
+actual_glyph_*.svg
+EC_Bangla_Unicode.ttf
+*.tmp.ttf
+
+# Cached embedded source fonts extracted from PDFs
+data/embedded_fonts/*.ttf
+
+# Local experiment/output files
+*.txt
+*.json.tmp
+page*.json
+*_analysis.json
+
+# PDF/debug artifacts
+*.pdf
+*.svg
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets / local environment
+.env
+.env.*
+!.env.example
