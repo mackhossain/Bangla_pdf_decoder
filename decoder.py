@@ -72,6 +72,30 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
     return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
 
 
+def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None)->str:
+    """Decode one PDF page and return the final Bengali Unicode text.
+
+    This is the reusable Python API equivalent of the CLI ``--page`` command.
+    Set ``review=True`` to use the same interactive manual glyph reviewer as
+    ``python decoder.py FILE.pdf --page N --review``.
+    """
+    pdf_path=Path(pdf_path); mapping_path=Path(mapping_path); learned_path=Path(learned_path); corrections_path=Path(corrections_path)
+    pdf=pdf_path.read_bytes(); _cache_embedded_ttf(pdf,page)
+    materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report={'missing_cids':[]}
+    try:
+        report=analyze_page_direct(pdf_path,page,materialized)
+        if review and report['missing_cids']:
+            review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts.json'),gid,list(report['missing_cids']),report.get('operations',[]))
+            try: materialized.unlink(missing_ok=True)
+            except PermissionError: pass
+            materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report=analyze_page_direct(pdf_path,page,materialized)
+        font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,page)),None)
+        return _logical_text(report,materialized,font_bytes,corrections_path)
+    finally:
+        try: materialized.unlink(missing_ok=True)
+        except PermissionError: pass
+
+
 def main()->int:
     parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text')
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False)
@@ -84,18 +108,13 @@ def main()->int:
         print('GENERATING UNICODE TTF'); print('======================'); print(f'Source glyph mappings : {stats["source_glyph_mappings"]}'); print(f'Single Unicode maps   : {stats["single_unicode_mappings"]}'); print(f'OpenType ligatures    : {stats["ligature_mappings"]}'); print(f'TTF: {output}'); return 0
     if args.pdf is None: parser.error('the following arguments are required: pdf (unless --generate-ttf is used)')
     if args.page is None: parser.error('--page is required unless --generate-ttf is used')
-    pdf=args.pdf.read_bytes(); _cache_embedded_ttf(pdf,args.page); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); text=''; report={'missing_cids':[]}
     try:
-        report=analyze_page_direct(args.pdf,args.page,mapping_path)
-        if args.review and report['missing_cids']:
-            review_run(args.pdf,args.page,args.learned,Path('data/bangla_conjuncts.json'),args.gid,list(report['missing_cids']),report.get('operations',[]))
-            try: mapping_path.unlink(missing_ok=True)
-            except PermissionError: pass
-            mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); report=analyze_page_direct(args.pdf,args.page,mapping_path)
-        font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,args.page)),None); text=_logical_text(report,mapping_path,font_bytes,args.corrections)
-    finally:
-        try: mapping_path.unlink(missing_ok=True)
-        except PermissionError: pass
+        text=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid)
+    except Exception as exc:
+        print(f'DECODE FAILED: {exc}'); return 1
+    pdf=args.pdf.read_bytes(); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned)
+    try: report=analyze_page_direct(args.pdf,args.page,mapping_path)
+    finally: mapping_path.unlink(missing_ok=True)
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
     if args.json_path: args.json_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
