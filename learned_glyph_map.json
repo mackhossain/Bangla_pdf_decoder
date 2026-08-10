@@ -875,6 +875,37 @@
           "source": "user_confirmed"
         }
       }
+    },
+    "DGRDOD+Bangla:f341f7ffc085bfbad10096f3c55962d77f3d1fd253a2db4d222255f4dd9b161a": {
+      "base_font": "DGRDOD+Bangla",
+      "glyphs": {
+        "249": {
+          "gid": 249,
+          "text": "জ্জ্ব",
+          "unicode": [
+            "U+099C",
+            "U+09CD",
+            "U+099C",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:1d5e3c5efab706a6c36576d84944572b046b98518a4175b4bbff0c9eea635839",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "297": {
+          "gid": 297,
+          "text": "ন্স",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09B8"
+          ],
+          "glyph_fingerprint": "glyph:4d5a3e6876cc296275be9686600bb254fadb3b072a220cd7a1d0e87daa10a97c",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        }
+      }
     }
   }
 }
