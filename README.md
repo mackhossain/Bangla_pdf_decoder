@@ -59,20 +59,7 @@ print(text)
 python decoder.py 261825_com_463_male_without_photo_26_2025-11-24.pdf --page 13 --review
 ```
 
-A `pathlib.Path` can also be supplied:
-
-```python
-from pathlib import Path
-import decoder
-
-text = decoder.decode_pdf(
-    Path("261825_com_463_male_without_photo_26_2025-11-24.pdf"),
-    page=13,
-    review=True,
-)
-```
-
-The CLI remains fully supported; importing `decoder` is an additional API and does not replace the command-line interface.
+A `pathlib.Path` can also be supplied. The CLI remains fully supported.
 
 ## Manual glyph review
 
@@ -89,21 +76,42 @@ The production reviewer:
 3. reuses confirmed mappings for the exact embedded-font fingerprint;
 4. reuses unambiguous confirmed glyph fingerprints across different PDFs;
 5. repairs already-known glyphs in the review line before creating the visual;
-6. creates **one self-contained HTML review file** for the genuinely unresolved target;
+6. creates one self-contained HTML review file for the genuinely unresolved target;
 7. renders the complete line from the exact embedded PDF glyph outlines and highlights the target CID/GID in red;
-8. accepts an exact Unicode string entered in the console and saves it at confidence `1.0`;
-9. deletes the temporary HTML automatically after a successful save.
+8. starts a **local loopback browser UI** at `127.0.0.1` and opens it automatically;
+9. lets you type the exact Bengali Unicode value directly into the HTML page and click **Save Mapping**;
+10. writes the confirmed value to `learned_glyph_map.json` and continues the decoder;
+11. deletes the temporary HTML automatically after a successful save.
+
+No command prompt switching is required for normal manual mapping. The browser UI also provides **Skip** and **Quit Review** buttons.
 
 Only genuinely unresolved glyphs remain as `⟦CID:n⟧` markers in the review text. A CID number alone is never treated as globally meaningful because subsetted PDF fonts can reuse CID/GID numbers for different glyphs.
 
-### Review commands
+### Browser review flow
 
 ```text
-M = enter the exact Unicode character/string
-N = move to the next unresolved glyph
-S = skip the current glyph
-Q = quit and keep all saved mappings
+unknown CID/GID
+      ↓
+create visual HTML
+      ↓
+start local http://127.0.0.1:<port>
+      ↓
+automatically open browser
+      ↓
+see complete PDF line + target glyph
+      ↓
+type Bengali Unicode
+      ↓
+click Save Mapping
+      ↓
+learned_glyph_map.json updated
+      ↓
+HTML deleted
+      ↓
+decoder continues
 ```
+
+The local reviewer listens only on `127.0.0.1`; it is not exposed as a public/network service.
 
 There is no AI/API requirement for the production review workflow.
 
@@ -122,7 +130,7 @@ confirmed learned mapping for the same font
         ↓
 unambiguous learned glyph fingerprint
         ↓
-manual review only if still unresolved
+manual browser review only if still unresolved
 ```
 
 The decoder does not silently guess an unknown glyph.
