@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .direct_pdf_fixed import embedded_fonts, ttf_gid_map, used_gids
 from .learned_mapping import font_key, glyph_key, build_fingerprint_index, load_database, remember_mapping, save_database
+from .review_server import run_web_review
 
 
 def _font_line_svg(font_path: Path, cids: list[int], target_gid: int) -> str:
@@ -61,7 +62,7 @@ def _write_html(path: Path, font_path: Path, gid: int, line_cids: list[int], map
 body{{font-family:Arial,sans-serif;margin:24px;background:#f3f4f6;color:#111}}.card{{max-width:1200px;margin:auto;background:#fff;border:1px solid #aaa;border-radius:10px;padding:22px;box-shadow:0 2px 10px #0001}}h1{{margin-top:0;font-size:24px}}.badge{{display:inline-block;background:#d11;color:#fff;font-weight:700;border-radius:5px;padding:5px 9px}}.line{{margin-top:16px;border:1px solid #888;background:#fff;padding:18px;overflow:auto}}.line-glyphs{{width:100%;height:220px;display:block;background:white}}.textline{{margin-top:12px;font-size:28px;line-height:1.7;word-break:break-all;border-top:1px solid #ddd;padding-top:12px}}.target{{color:#d11;background:#ffe0e0;border:2px solid #d11;border-radius:4px;padding:1px 4px;font-weight:700}}.unknown{{color:#b11;background:#fff0f0;border-radius:3px;padding:1px 3px}}.note{{color:#555;margin:8px 0}}.meta{{font-family:Consolas,monospace;background:#f7f7f7;padding:10px;border-radius:6px}}</style></head><body><div class="card">
 <h1>EC Manual Glyph Review</h1><div class="meta">Target CID/GID: <span class="badge">{gid}</span></div>
 <p class="note">The line below is rendered from the exact embedded PDF TrueType glyph outlines. Only the target CID/GID is highlighted in red.</p><div class="line">{line_svg}</div><div class="textline">{line_text}</div>
-<p class="note">Known glyphs are shown as decoded Unicode. Only genuinely unresolved glyphs remain as CID markers.</p><p class="note">Enter the exact Unicode character/string in the console. The HTML file is deleted automatically after a successful save.</p>
+<p class="note">Known glyphs are shown as decoded Unicode. Only genuinely unresolved glyphs remain as CID markers.</p>
 </div></body></html>'''
     path.write_text(page, encoding="utf-8")
 
@@ -108,10 +109,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
             font_path = Path(tmp) / "embedded.ttf"
             font_path.write_bytes(raw)
 
-            # Start with the PDF's own ToUnicode mappings, then overlay confirmed
-            # mappings for this exact font, then use an unambiguous learned GID
-            # fallback. This fixes review lines such as ...207...249... where 207
-            # was learned previously but belongs to a different PDF font subset.
             current_map: dict[int, str] = {int(g): str(t) for g, t in ttf_mapping.items() if isinstance(t, str)}
             for entry in db.get("fonts", {}).get(fkey, {}).get("glyphs", {}).values():
                 if isinstance(entry, dict) and isinstance(entry.get("gid"), int) and isinstance(entry.get("text"), str) and entry.get("confidence", 0) >= 1.0:
@@ -125,8 +122,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
                     print(f'SKIP GID {gid}: already learned -> {existing.get("text")}', flush=True)
                     continue
 
-                # If this target itself is already unambiguously known by GID,
-                # repair the mapping before creating a review file.
                 if gid in unique_gid_map:
                     text = unique_gid_map[gid]
                     gkey = glyph_key(font_path, gid)
@@ -152,7 +147,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
                 html_path = Path.cwd() / f"glyph_review_{gid}.html"
                 line_cids = operation_lines.get(gid, [gid])
 
-                # Repair all known glyphs in the review line before HTML generation.
                 for line_cid in line_cids:
                     if line_cid == gid or line_cid in current_map:
                         continue
@@ -176,43 +170,28 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
 
                 _write_html(html_path, font_path, gid, line_cids, current_map)
                 print(f"HTML: {html_path.resolve()}", flush=True)
-                try:
-                    webbrowser.open(html_path.resolve().as_uri(), new=2)
-                except Exception as exc:
-                    print(f"Could not automatically open browser: {exc}", flush=True)
-                print("\n" + "=" * 72, flush=True)
-                print(f"GLYPH REVIEW — CID/GID {gid} — font {base_font}", flush=True)
-                print("=" * 72, flush=True)
-                print("The HTML shows the complete text line and highlights this exact CID/GID in red.", flush=True)
-                print(f"HTML: {html_path.resolve()}", flush=True)
-                saved = False
-                while True:
-                    answer = input("M=manual Unicode, N=next, S=skip, Q=quit: ").strip().lower()
-                    if answer == "q":
-                        save_database(db_path, db)
-                        return
-                    if answer in {"n", "s"}:
-                        break
-                    if answer == "m":
-                        text = input("Enter exact Unicode character/string: ").strip()
-                        if not text:
-                            print("Empty mapping not accepted.", flush=True)
-                            continue
-                        remember_mapping(db, fkey=fkey, base_font=base_font, gid=gid, gkey=gkey, text=text, source="user_confirmed", confidence=1.0)
-                        current_map[gid] = text
-                        unique_gid_map[gid] = text
-                        fingerprint_index[gkey] = db["fonts"][fkey]["glyphs"][str(gid)]
-                        save_database(db_path, db)
-                        print(f"LEARNED: CID/GID {gid} -> {text} | confidence=1.0", flush=True)
-                        saved = True
-                        break
-                    print("Enter M, N, S, or Q.", flush=True)
-                if saved:
+
+                def save_from_browser(text: str, *, _gid=gid, _gkey=gkey, _fkey=fkey, _base=base_font):
+                    remember_mapping(db, fkey=_fkey, base_font=_base, gid=_gid, gkey=_gkey, text=text, source="user_confirmed", confidence=1.0)
+                    current_map[_gid] = text
+                    unique_gid_map[_gid] = text
+                    fingerprint_index[_gkey] = db["fonts"][_fkey]["glyphs"][str(_gid)]
+                    save_database(db_path, db)
+
+                result, text = run_web_review(html_path, gid, save_from_browser)
+                if result == "quit":
+                    save_database(db_path, db)
+                    return
+                if result == "save":
+                    print(f"LEARNED: CID/GID {gid} -> {text} | confidence=1.0", flush=True)
                     try:
                         html_path.unlink(missing_ok=True)
                         print(f"DELETED: {html_path.name}", flush=True)
                     except OSError as exc:
                         print(f"WARNING: could not delete {html_path}: {exc}", flush=True)
+                elif result == "skip":
+                    print(f"SKIPPED: CID/GID {gid}", flush=True)
+
     if not found:
         raise RuntimeError(f"Glyph review found no embedded font on page {page}")
     save_database(db_path, db)
