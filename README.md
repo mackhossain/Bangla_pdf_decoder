@@ -10,6 +10,14 @@ Decode a page:
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3
 ```
 
+Decode every page sequentially with browser review when needed:
+
+```cmd
+python decoder.py 261823_com_4441_female_without_photo_247_2025-11-24.pdf --all-pages --review
+```
+
+`--all-pages` processes pages from 1 through the PDF's final page in order. `--page N` and `--all-pages` are mutually exclusive. Existing single-page commands continue to work unchanged.
+
 Save decoded Unicode text:
 
 ```cmd
@@ -114,6 +122,22 @@ decoder continues
 The local reviewer listens only on `127.0.0.1`; it is not exposed as a public/network service.
 
 There is no AI/API requirement for the production review workflow.
+
+## All-pages behavior
+
+With:
+
+```cmd
+python decoder.py FILE.pdf --all-pages --review
+```
+
+pages are processed sequentially. Known mappings are reused automatically, so previously learned glyphs are not requested again. If a genuinely unresolved glyph appears, the browser reviewer pauses processing until you **Save Mapping**, **Skip**, or **Quit Review**. After a saved mapping, the current page is rematerialized using the updated learned database and processing continues.
+
+The optional `--text OUTPUT.txt` flag can be combined with `--all-pages` to save the combined decoded text from all pages in page order:
+
+```cmd
+python decoder.py FILE.pdf --all-pages --review --text all_pages.txt
+```
 
 ## Persistent mapping data
 
