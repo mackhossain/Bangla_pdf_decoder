@@ -1,19 +1,19 @@
 # EC PDF Bangla Decoder
 
-A local, deterministic decoder and manual reviewer for Bangladesh Election Commission (EC) voter-list PDFs that use embedded/subsetted Bangla TrueType fonts.
+A local, deterministic decoder and manual reviewer for Bangla PDFs that use embedded/subsetted Bangla TrueType fonts.
 
 ## Main workflow
 
 Decode a page:
 
 ```cmd
-python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3
+python decoder.py filename.pdf --page 3
 ```
 
 Decode every page sequentially with browser review when needed:
 
 ```cmd
-python decoder.py 261823_com_4441_female_without_photo_247_2025-11-24.pdf --all-pages --review
+python decoder.py filename.pdf --all-pages --review
 ```
 
 `--all-pages` processes pages from 1 through the PDF's final page in order. `--page N` and `--all-pages` are mutually exclusive. Existing single-page commands continue to work unchanged.
@@ -21,13 +21,13 @@ python decoder.py 261823_com_4441_female_without_photo_247_2025-11-24.pdf --all-
 Save decoded Unicode text:
 
 ```cmd
-python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --text page3.txt
+python decoder.py filename.pdf --page 3 --text page3.txt
 ```
 
 Save diagnostics:
 
 ```cmd
-python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --json page3.json
+python decoder.py filename.pdf --page 3 --json page3.json
 ```
 
 ## Performance and profiling
@@ -39,7 +39,7 @@ The most important optimization is the embedded-font glyph fingerprint cache: th
 An optional profiling mode shows where time is spent without changing decoding behavior:
 
 ```cmd
-python decoder.py 261823_com_4441_female_without_photo_247_2025-11-24.pdf --page 13 --profile
+python decoder.py filename.pdf --page 13 --profile
 ```
 
 Typical output includes:
@@ -72,7 +72,7 @@ Normal decoding:
 import decoder
 
 text = decoder.decode_pdf(
-    "261825_com_463_male_without_photo_26_2025-11-24.pdf",
+    "filename.pdf",
     page=13,
 )
 
@@ -85,7 +85,7 @@ Decoding with the same interactive manual review workflow:
 import decoder
 
 text = decoder.decode_pdf(
-    "261825_com_463_male_without_photo_26_2025-11-24.pdf",
+    "filename.pdf",
     page=13,
     review=True,
 )
@@ -96,7 +96,7 @@ print(text)
 `review=True` is the Python equivalent of:
 
 ```cmd
-python decoder.py 261825_com_463_male_without_photo_26_2025-11-24.pdf --page 13 --review
+python decoder.py filename.pdf --page 13 --review
 ```
 
 A `pathlib.Path` can also be supplied. The CLI remains fully supported.
@@ -106,7 +106,7 @@ A `pathlib.Path` can also be supplied. The CLI remains fully supported.
 When a page contains genuinely unresolved CID/GID values:
 
 ```cmd
-python decoder.py 261825_com_463_male_without_photo_26_2025-11-24.pdf --page 1 --review
+python decoder.py filename.pdf --page 1 --review
 ```
 
 The production reviewer:
@@ -248,6 +248,4 @@ python -m pip install -r requirements.txt
 
 The runtime dependencies are intentionally limited to the packages used by the current decoder and shaping/TTF pipeline.
 
-## Privacy
 
-Election/voter PDFs can contain sensitive personal information. Keep real voter PDFs and generated personal-data output outside the Git repository.
