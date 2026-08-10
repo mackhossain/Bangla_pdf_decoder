@@ -1,15 +1,34 @@
 """EC Bangla PDF decoder with embedded-TTF fallback and interactive learning."""
 from __future__ import annotations
 import argparse,json,os,tempfile
+from functools import lru_cache
 from pathlib import Path
 from src.ec_pdf_decoder.bangla_cleanup import cleanup_bangla_text
 from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
-from src.ec_pdf_decoder.learned_mapping import font_key,glyph_key,find_by_glyph_fingerprint,load_database
+from src.ec_pdf_decoder.learned_mapping import font_key,glyph_key,build_fingerprint_index,find_by_glyph_fingerprint,load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
+
+
+@lru_cache(maxsize=4)
+def _cached_learned_database(path_str:str,mtime_ns:int,size:int):
+    """Load the learned database once per file version and keep it in RAM."""
+    return load_database(Path(path_str))
+
+
+def _load_learned_database(path:Path):
+    try:
+        stat=path.stat()
+    except FileNotFoundError:
+        return load_database(path)
+    return _cached_learned_database(str(path.resolve()),stat.st_mtime_ns,stat.st_size)
+
+
+def _clear_learned_cache():
+    _cached_learned_database.cache_clear()
 
 
 def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
@@ -22,9 +41,11 @@ def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
     return None
 
 
-def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)->Path:
+def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,learned=None)->Path:
     base=json.loads(legacy_path.read_text(encoding='utf-8')) if legacy_path.exists() else {}
-    learned=load_database(learned_path); merged={k:dict(v) for k,v in base.items()}
+    learned=learned if learned is not None else _load_learned_database(learned_path)
+    fingerprint_index=build_fingerprint_index(learned)
+    merged={k:dict(v) for k,v in base.items()}
     for _resource,base_font,raw in embedded_fonts(pdf,page):
         section=merged.setdefault(base_font,{})
         for gid,text in ttf_gid_map(raw).items(): section.setdefault(str(gid),text)
@@ -41,9 +62,9 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)-
                 for gid in range(glyph_count):
                     key=str(gid)
                     if key in section: continue
-                    try: gkey=glyph_key(font_path,gid); match=find_by_glyph_fingerprint(learned,gkey)
+                    try: gkey=glyph_key(font_path,gid); match=fingerprint_index.get(gkey)
                     except Exception: continue
-                    if match is not None: section[key]=str(match['text'])
+                    if match is not None: section[key]=str(match.get('text',''))
             finally:
                 if font is not None: font.close()
         finally: font_path.unlink(missing_ok=True)
@@ -73,22 +94,21 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
     return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
 
 
-def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False):
-    """Decode one PDF page and return final Bengali Unicode text.
-
-    With return_report=True, returns (text, analysis_report). The default
-    remains the original string-only API.
-    """
+def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False,learned_db=None)->str:
+    """Decode one PDF page and return final Bengali Unicode text."""
     pdf_path=Path(pdf_path); mapping_path=Path(mapping_path); learned_path=Path(learned_path); corrections_path=Path(corrections_path)
+    learned_db=learned_db if learned_db is not None else _load_learned_database(learned_path)
     pdf=read_pdf_bytes(pdf_path); _cache_embedded_ttf(pdf,page)
-    materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report={'missing_cids':[]}
+    materialized=_materialize_mapping(pdf,page,mapping_path,learned_path,learned_db); report={'missing_cids':[]}
     try:
         report=analyze_page_direct(pdf_path,page,materialized)
         if review and report['missing_cids']:
             review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts.json'),gid,list(report['missing_cids']),report.get('operations',[]))
+            _clear_learned_cache()
+            learned_db=_load_learned_database(learned_path)
             try: materialized.unlink(missing_ok=True)
             except PermissionError: pass
-            materialized=_materialize_mapping(pdf,page,mapping_path,learned_path); report=analyze_page_direct(pdf_path,page,materialized)
+            materialized=_materialize_mapping(pdf,page,mapping_path,learned_path,learned_db); report=analyze_page_direct(pdf_path,page,materialized)
         font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,page)),None)
         text=_logical_text(report,materialized,font_bytes,corrections_path)
         return (text,report) if return_report else text
@@ -117,12 +137,14 @@ def main()->int:
             page_count=len(PdfReader(str(args.pdf)).pages)
         except Exception as exc:
             print(f'DECODE FAILED: could not determine page count: {exc}'); return 1
-        all_text=[]; any_unresolved=False
+        all_text=[]; any_unresolved=False; learned_db=_load_learned_database(args.learned)
         for page in range(1,page_count+1):
             print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
             try:
-                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True)
+                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db)
                 all_text.append(text)
+                if args.review:
+                    learned_db=_load_learned_database(args.learned)
                 missing=report.get('missing_cids',[]); any_unresolved |= bool(missing)
                 print(f'PAGE: {page} | MAPPED ENTRIES: {report.get("tounicode_entries",0)} | UNRESOLVED CIDs: {missing}',flush=True)
                 print(text,flush=True)
