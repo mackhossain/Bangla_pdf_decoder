@@ -48,23 +48,26 @@ def get_mapping(data: dict[str, Any], fkey: str, gid: int) -> dict[str, Any] | N
     entry = data.get("fonts", {}).get(fkey, {}).get("glyphs", {}).get(str(gid))
     return entry if isinstance(entry, dict) else None
 
-def find_by_glyph_fingerprint(data: dict[str, Any], gkey: str) -> dict[str, Any] | None:
-    """Find a previously confirmed mapping for the identical glyph outline.
-
-    A fingerprint match is stronger than a CID/GID match because subset fonts may
-    assign different CIDs to the same outline. Ambiguous fingerprints are rejected.
-    """
-    matches = []
-    for fkey, font in data.get("fonts", {}).items():
+def build_fingerprint_index(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Build a fast O(1) index of unambiguous confirmed glyph fingerprints."""
+    index: dict[str, dict[str, Any]] = {}
+    ambiguous: set[str] = set()
+    for font in data.get("fonts", {}).values():
         if not isinstance(font, dict): continue
-        for gid, entry in font.get("glyphs", {}).items():
+        for entry in font.get("glyphs", {}).values():
             if not isinstance(entry, dict) or entry.get("confidence", 0) < 1.0: continue
-            if entry.get("glyph_fingerprint") == gkey and isinstance(entry.get("text"), str):
-                matches.append((fkey, gid, entry))
-    if not matches: return None
-    texts = {m[2]["text"] for m in matches}
-    if len(texts) != 1: return None
-    return dict(matches[0][2])
+            gkey, text = entry.get("glyph_fingerprint"), entry.get("text")
+            if not isinstance(gkey, str) or not isinstance(text, str) or not gkey: continue
+            previous = index.get(gkey)
+            if previous is not None and previous.get("text") != text:
+                ambiguous.add(gkey)
+            elif gkey not in ambiguous:
+                index[gkey] = entry
+    for gkey in ambiguous: index.pop(gkey, None)
+    return index
+
+def find_by_glyph_fingerprint(data: dict[str, Any], gkey: str) -> dict[str, Any] | None:
+    return build_fingerprint_index(data).get(gkey)
 
 def remember_mapping(data: dict[str, Any], *, fkey: str, base_font: str, gid: int, gkey: str, text: str, source: str = "user_confirmed", confidence: float = 1.0) -> None:
     fonts = data.setdefault("fonts", {})
