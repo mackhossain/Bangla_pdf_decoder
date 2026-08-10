@@ -4,31 +4,876 @@
     "CQCQVJ+Bangla:fd8e62aa178cb1db5ef3ebfa1850e069404b2afe242896ff35e9a3a52d2efc8a": {
       "base_font": "CQCQVJ+Bangla",
       "glyphs": {
-        "203": {"gid": 203, "text": "্য", "unicode": ["U+09CD", "U+09AF"], "glyph_fingerprint": "glyph:475a4aa9289d1cdd19f26cc59581d90dafe0437cdf8db390ae5024920ab750fc", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "206": {"gid": 206, "text": "র্", "unicode": ["U+09B0", "U+09CD"], "glyph_fingerprint": "glyph:0638786048ae8b04d58f0bcc4409025e5ffe5f51db9f1fcf21e0ac293eaa36c6", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "207": {"gid": 207, "text": "ে", "unicode": ["U+09C7"], "glyph_fingerprint": "glyph:e800c13df9c21d7ce4999594e4b19a8a6774673bf51c3274753bf2ab824f8172", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "217": {"gid": 217, "text": "ক্ষ", "unicode": ["U+0995", "U+09CD", "U+09B7"], "glyph_fingerprint": "glyph:aa013e2da845d9d5ef14e9b35b838df9f7a55dcbceaa7dbaf971dedc58363302", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "234": {"gid": 234, "text": "ঙ্গ", "unicode": ["U+0999", "U+09CD", "U+0997"], "glyph_fingerprint": "glyph:001eb05bfa5b158bd58c1681e62c752fc6f8dd9f6d49e4f4ce74eb2e33dd92dc", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "245": {"gid": 245, "text": "জ্জ", "unicode": ["U+099C", "U+09CD", "U+099C"], "glyph_fingerprint": "glyph:18d9a5b90859012b8ebf7edf8c48879fa112e03e48ed22a4a7b76febc5bd9b22", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "251": {"gid": 251, "text": "ঞ্চ", "unicode": ["U+099E", "U+09CD", "U+099A"], "glyph_fingerprint": "glyph:1e15f64273f15afd0c382d3387974dc11ddea64688b93297e215d2fe067e13c4", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "253": {"gid": 253, "text": "ঞ্জ", "unicode": ["U+099E", "U+09CD", "U+099C"], "glyph_fingerprint": "glyph:815ab1acfbeacf96bc12aab932188f32521af3c7a63c79be69437c72daa4ff92", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "275": {"gid": 275, "text": "ত্ত", "unicode": ["U+09A4", "U+09CD", "U+09A4"], "glyph_fingerprint": "glyph:9b79288512aef7e96ca42628551cbbacefa347ec25e586f362bd2b25c703574f", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "290": {"gid": 290, "text": "ন্ত", "unicode": ["U+09A8", "U+09CD", "U+09A4"], "glyph_fingerprint": "glyph:9425f4c00d16bae11ab824d9a41c13e34ef33adcbb65d99639806660c6706fcc", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf", "page": 3}},
-        "292": {"gid": 292, "text": "ন্দ", "unicode": ["U+09A8", "U+09CD", "U+09A6"], "glyph_fingerprint": "glyph:4dbdd06ecee26cf5c5e483f4ac63f54b2e682d8bfba5ad1f61602e1528750345", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "293": {"gid": 293, "text": "ন্ম", "unicode": ["U+09A8", "U+09CD", "U+09AE"], "glyph_fingerprint": "glyph:5490bcddd0f4fac3bd51d7cfa06e4ea439525368fca2bdd71906d77236aadb73", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "295": {"gid": 295, "text": "ন্দ্র", "unicode": ["U+09A8", "U+09CD", "U+09A6", "U+09CD", "U+09B0"], "glyph_fingerprint": "glyph:148b9c03fc069da0eadc8d36ac7ecc171a1ba1f4a9a395e79995127a20b4868c", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "296": {"gid": 296, "text": "ন্ন", "unicode": ["U+09A8", "U+09CD", "U+09A8"], "glyph_fingerprint": "glyph:cd8823e39336b56e0a98047ca3fd0220e9872e4e73bbe6417eec8cf565106d22", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "303": {"gid": 303, "text": "ন্য", "unicode": ["U+09A8", "U+09CD", "U+09AF"], "glyph_fingerprint": "glyph:251ca9af45eebfc8c3c08559958690567851efbcd93913805b8d92af8c7a854a", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "308": {"gid": 308, "text": "প্র", "unicode": ["U+09AA", "U+09CD", "U+09B0"], "glyph_fingerprint": "glyph:aa0f42d26227952befab71226d30ae7bddc58845ddbcb9a6d2fa426e5e0b4279", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "322": {"gid": 322, "text": "ম্প", "unicode": ["U+09AE", "U+09CD", "U+09AA"], "glyph_fingerprint": "glyph:e54c2f5573a915e1aa25d29905557089a393564f74edadb0762aa771eabfeb57", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "324": {"gid": 324, "text": "ম্ব", "unicode": ["U+09AE", "U+09CD", "U+09AC"], "glyph_fingerprint": "glyph:c6bea26d2911fdcaeca4ef2eb403ac43c22ddf6d95299be56c0e0f43c663a761", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "345": {"gid": 345, "text": "শ্য", "unicode": ["U+09B6", "U+09CD", "U+09AF"], "glyph_fingerprint": "glyph:7ec8b08108213dd09d6d4c6f3561cacfc476db662192b349271d40e7742d164c", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "347": {"gid": 347, "text": "শ্ব", "unicode": ["U+09B6", "U+09CD", "U+09AC"], "glyph_fingerprint": "glyph:e3b1cf1917784b41aaebdec3097c8f74f9fef9d2d285301ca6e6e4091f44288b", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "350": {"gid": 350, "text": "ষ্ট", "unicode": ["U+09B7", "U+09CD", "U+099F"], "glyph_fingerprint": "glyph:04624f73a01d908598c8bc4109f8a07c48e9f35903bcea227cb590094cbe2d95", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "384": {"gid": 384, "text": "সু", "unicode": ["U+09B8", "U+09C1"], "glyph_fingerprint": "glyph:e9aedfe7f864d7f4aec0301a48aefa31e13558f468ff559a40d2aa4ab40358f0", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "385": {"gid": 385, "text": "রু", "unicode": ["U+09B0", "U+09C1"], "glyph_fingerprint": "glyph:a88c6d5fb36f98241a1851ba64917cafa62bd82e985ff9d4d7aba1ebfedf4f42", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "387": {"gid": 387, "text": "দুর্", "unicode": ["U+09A6", "U+09C1", "U+09B0", "U+09CD"], "glyph_fingerprint": "glyph:320b8b1491fc375a6a5747f226e8c7f4f611e046afcf14c5205b9d8a00e48b4d", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}},
-        "419": {"gid": 419, "text": "কু", "unicode": ["U+0995", "U+09C1"], "glyph_fingerprint": "glyph:e67eba5dc9f58f585b2f0aec448dc603dc76a5625d6a170b69319f6c039a1bac", "confidence": 1.0, "source": "ocr_verified", "evidence": {"pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf", "page": 3}}
+        "203": {
+          "gid": 203,
+          "text": "্য",
+          "unicode": [
+            "U+09CD",
+            "U+09AF"
+          ],
+          "glyph_fingerprint": "glyph:475a4aa9289d1cdd19f26cc59581d90dafe0437cdf8db390ae5024920ab750fc",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "206": {
+          "gid": 206,
+          "text": "র্",
+          "unicode": [
+            "U+09B0",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:0638786048ae8b04d58f0bcc4409025e5ffe5f51db9f1fcf21e0ac293eaa36c6",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "207": {
+          "gid": 207,
+          "text": "ে",
+          "unicode": [
+            "U+09C7"
+          ],
+          "glyph_fingerprint": "glyph:e800c13df9c21d7ce4999594e4b19a8a6774673bf51c3274753bf2ab824f8172",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "217": {
+          "gid": 217,
+          "text": "ক্ষ",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B7"
+          ],
+          "glyph_fingerprint": "glyph:aa013e2da845d9d5ef14e9b35b838df9f7a55dcbceaa7dbaf971dedc58363302",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "234": {
+          "gid": 234,
+          "text": "ঙ্গ",
+          "unicode": [
+            "U+0999",
+            "U+09CD",
+            "U+0997"
+          ],
+          "glyph_fingerprint": "glyph:001eb05bfa5b158bd58c1681e62c752fc6f8dd9f6d49e4f4ce74eb2e33dd92dc",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "245": {
+          "gid": 245,
+          "text": "জ্জ",
+          "unicode": [
+            "U+099C",
+            "U+09CD",
+            "U+099C"
+          ],
+          "glyph_fingerprint": "glyph:18d9a5b90859012b8ebf7edf8c48879fa112e03e48ed22a4a7b76febc5bd9b22",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "251": {
+          "gid": 251,
+          "text": "ঞ্চ",
+          "unicode": [
+            "U+099E",
+            "U+09CD",
+            "U+099A"
+          ],
+          "glyph_fingerprint": "glyph:1e15f64273f15afd0c382d3387974dc11ddea64688b93297e215d2fe067e13c4",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "253": {
+          "gid": 253,
+          "text": "ঞ্জ",
+          "unicode": [
+            "U+099E",
+            "U+09CD",
+            "U+099C"
+          ],
+          "glyph_fingerprint": "glyph:815ab1acfbeacf96bc12aab932188f32521af3c7a63c79be69437c72daa4ff92",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "275": {
+          "gid": 275,
+          "text": "ত্ত",
+          "unicode": [
+            "U+09A4",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:9b79288512aef7e96ca42628551cbbacefa347ec25e586f362bd2b25c703574f",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "290": {
+          "gid": 290,
+          "text": "ন্ত",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:9425f4c00d16bae11ab824d9a41c13e34ef33adcbb65d99639806660c6706fcc",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71_2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "292": {
+          "gid": 292,
+          "text": "ন্দ",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A6"
+          ],
+          "glyph_fingerprint": "glyph:4dbdd06ecee26cf5c5e483f4ac63f54b2e682d8bfba5ad1f61602e1528750345",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "293": {
+          "gid": 293,
+          "text": "ন্ম",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:5490bcddd0f4fac3bd51d7cfa06e4ea439525368fca2bdd71906d77236aadb73",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "295": {
+          "gid": 295,
+          "text": "ন্দ্র",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A6",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:148b9c03fc069da0eadc8d36ac7ecc171a1ba1f4a9a395e79995127a20b4868c",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "296": {
+          "gid": 296,
+          "text": "ন্ন",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:cd8823e39336b56e0a98047ca3fd0220e9872e4e73bbe6417eec8cf565106d22",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "303": {
+          "gid": 303,
+          "text": "ন্য",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09AF"
+          ],
+          "glyph_fingerprint": "glyph:251ca9af45eebfc8c3c08559958690567851efbcd93913805b8d92af8c7a854a",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "308": {
+          "gid": 308,
+          "text": "প্র",
+          "unicode": [
+            "U+09AA",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:aa0f42d26227952befab71226d30ae7bddc58845ddbcb9a6d2fa426e5e0b4279",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "322": {
+          "gid": 322,
+          "text": "ম্প",
+          "unicode": [
+            "U+09AE",
+            "U+09CD",
+            "U+09AA"
+          ],
+          "glyph_fingerprint": "glyph:e54c2f5573a915e1aa25d29905557089a393564f74edadb0762aa771eabfeb57",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "324": {
+          "gid": 324,
+          "text": "ম্ব",
+          "unicode": [
+            "U+09AE",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:c6bea26d2911fdcaeca4ef2eb403ac43c22ddf6d95299be56c0e0f43c663a761",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "345": {
+          "gid": 345,
+          "text": "শ্য",
+          "unicode": [
+            "U+09B6",
+            "U+09CD",
+            "U+09AF"
+          ],
+          "glyph_fingerprint": "glyph:7ec8b08108213dd09d6d4c6f3561cacfc476db662192b349271d40e7742d164c",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "347": {
+          "gid": 347,
+          "text": "শ্ব",
+          "unicode": [
+            "U+09B6",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:e3b1cf1917784b41aaebdec3097c8f74f9fef9d2d285301ca6e6e4091f44288b",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "350": {
+          "gid": 350,
+          "text": "ষ্ট",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+099F"
+          ],
+          "glyph_fingerprint": "glyph:04624f73a01d908598c8bc4109f8a07c48e9f35903bcea227cb590094cbe2d95",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "384": {
+          "gid": 384,
+          "text": "সু",
+          "unicode": [
+            "U+09B8",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:e9aedfe7f864d7f4aec0301a48aefa31e13558f468ff559a40d2aa4ab40358f0",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "385": {
+          "gid": 385,
+          "text": "রু",
+          "unicode": [
+            "U+09B0",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:a88c6d5fb36f98241a1851ba64917cafa62bd82e985ff9d4d7aba1ebfedf4f42",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "387": {
+          "gid": 387,
+          "text": "দুর্",
+          "unicode": [
+            "U+09A6",
+            "U+09C1",
+            "U+09B0",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:320b8b1491fc375a6a5747f226e8c7f4f611e046afcf14c5205b9d8a00e48b4d",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "419": {
+          "gid": 419,
+          "text": "কু",
+          "unicode": [
+            "U+0995",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:e67eba5dc9f58f585b2f0aec448dc603dc76a5625d6a170b69319f6c039a1bac",
+          "confidence": 1.0,
+          "source": "ocr_verified",
+          "evidence": {
+            "pdf": "261694_com_1267_female_without_photo_71-2025-11-24.pdf",
+            "page": 3
+          }
+        },
+        "216": {
+          "gid": 216,
+          "text": "ক্র",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:cf64c0549137215f605df6d05281eb8dd4daba3bb0f568d4f161412a0c2e0679",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "276": {
+          "gid": 276,
+          "text": "ত্র",
+          "unicode": [
+            "U+09A4",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:8763dbd6b817a472a752122412fc6dd9f9d4c81e02c6c2570c96440fedae123a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "279": {
+          "gid": 279,
+          "text": "দ্দ",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09A6"
+          ],
+          "glyph_fingerprint": "glyph:a71020f3d64f8a0f922e3f65463bf28ca8f5382e9b251f7d9464c09d1edd9f03",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "283": {
+          "gid": 283,
+          "text": "দ্ব",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:cc8e391d9f7cc2933a9b74e9d3462e4021fc0ac45263c1aeef62faf71d749b1a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "349": {
+          "gid": 349,
+          "text": "ষ্ণ",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+09A3"
+          ],
+          "glyph_fingerprint": "glyph:6e54c66619c92e060be019879ba87056f5968937891fcb59bca7b2e7d1cb7a89",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "353": {
+          "gid": 353,
+          "text": "ষ্প",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+09AA"
+          ],
+          "glyph_fingerprint": "glyph:e3eaf0afc2ea9e3beb0c9857070df72c2200340956302be31a70820d13950683",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "366": {
+          "gid": 366,
+          "text": "স্ব",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:72918e6a310a8fa29cefb3cf98dc23ac866840a7b367a420878a3b435140424c",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "140": {
+          "gid": 140,
+          "text": "ন্",
+          "unicode": [
+            "U+09A8",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:f67cfe37cbc004bf7703377ab6e1add55e29ede00bf8f1459f84a1d4637f33bc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "208": {
+          "gid": 208,
+          "text": "ৈ",
+          "unicode": [
+            "U+09C8"
+          ],
+          "glyph_fingerprint": "glyph:f88b66b879e84b57d21326ae9164f733e269cf043469ecfb690d2be273607690",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "215": {
+          "gid": 215,
+          "text": "ক্ত",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:b913707042cd0a7388694b03458ce1e31a55229e0e4e6921a14e7af3efb781e0",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "281": {
+          "gid": 281,
+          "text": "দ্র",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:a1acc113ca266cea107085a2ac31d907c55cf055be7a640cbc419497c7f54e32",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "307": {
+          "gid": 307,
+          "text": "প্ন",
+          "unicode": [
+            "U+09AA",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:c8ab2539c5f7437108af59a24c4a98205bbda2739ab321eece0895e0632fc5d5",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "344": {
+          "gid": 344,
+          "text": "শ্র",
+          "unicode": [
+            "U+09B6",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:48eaf7f482d2012a54d7132d083151f11d535b35503948916053c594d957a728",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "363": {
+          "gid": 363,
+          "text": "স্ন",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:8a49461b07d0c5920db7fb6cd71003668018f04f3dea189b0a13a7956c5759ad",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "383": {
+          "gid": 383,
+          "text": "নু",
+          "unicode": [
+            "U+09A8",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:3de3e6aac54048f24cd42ca3c7aa2330aeefbf517f767d9c85120b7d1f413fe8",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "229": {
+          "gid": 229,
+          "text": "গ্র",
+          "unicode": [
+            "U+0997",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:3f5b08377e6b63ffd64c7f31d62dd5bf9688d5accc5d7617c9b38f69798934e7",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "256": {
+          "gid": 256,
+          "text": "ট্র",
+          "unicode": [
+            "U+099F",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:7a41ba9356bf2e0d256ad59f19ab93a27c335209527cc63182c800d7b3d1e1c8",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "294": {
+          "gid": 294,
+          "text": "ন্ধ",
+          "unicode": [
+            "U+09A8",
+            "U+09CD",
+            "U+09A7"
+          ],
+          "glyph_fingerprint": "glyph:8a85302c7f45620e0ce1c9221c78fd241db08f36abb2c600ea87527e2a68f1c4",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "332": {
+          "gid": 332,
+          "text": "ল্ল",
+          "unicode": [
+            "U+09B2",
+            "U+09CD",
+            "U+09B2"
+          ],
+          "glyph_fingerprint": "glyph:0b142ba72d268fc8f5956159fd25fe43e7dd1d8e1774d1d6ccd0d087f05cf015",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "218": {
+          "gid": 218,
+          "text": "ক্ষ্ম",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B7",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:709e77bdaac22297446134c6c9f07b55e7be91c36e96755bd599f059e769141f",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "325": {
+          "gid": 325,
+          "text": "ম্ভ",
+          "unicode": [
+            "U+09AE",
+            "U+09CD",
+            "U+09AD"
+          ],
+          "glyph_fingerprint": "glyph:3dcdb730fcd30bae43900b3152d169f1a239320326b586fa3d19a66b51ed4514",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "364": {
+          "gid": 364,
+          "text": "স্প",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09AA"
+          ],
+          "glyph_fingerprint": "glyph:bd5c16f7d300aca4f63f136a9a7947bfa12125ff6d31d4ff627baefc8b7431cd",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "386": {
+          "gid": 386,
+          "text": "রূ",
+          "unicode": [
+            "U+09B0",
+            "U+09C2"
+          ],
+          "glyph_fingerprint": "glyph:db966bfd72b765af922e8f2337578dfaecb714e6fb78443d77d57080f2681a90",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "304": {
+          "gid": 304,
+          "text": "প্ত",
+          "unicode": [
+            "U+09AA",
+            "U+09CD",
+            "U+09A4"
+          ],
+          "glyph_fingerprint": "glyph:a757f18622a0e1935e75023bb86403cdd0b7d7380698eadda059c9b1a3135e8d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "336": {
+          "gid": 336,
+          "text": "ল্প",
+          "unicode": [
+            "U+09B2",
+            "U+09CD",
+            "U+09AA"
+          ],
+          "glyph_fingerprint": "glyph:a137b84011002d1fbdbe1effc136d3769cde44f3ac5563212d373183f081b664",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "121": {
+          "gid": 121,
+          "text": "ক্",
+          "unicode": [
+            "U+0995",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:b13a797487e948cc9e316e5a59c82d41ebd95d0f254d01d4a031583ccaeba34d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "150": {
+          "gid": 150,
+          "text": "ষ্",
+          "unicode": [
+            "U+09B7",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:4bc0dfd3cc4c9a90fdb91432ca11b7599a1535397bfbd6f67f73d8fbcafaebcb",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "284": {
+          "gid": 284,
+          "text": "দ্ধ",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09A7"
+          ],
+          "glyph_fingerprint": "glyph:1e36ee46d611c5e5bee43b9f3e312507444574e05a903158dfe4a01a53abf628",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "388": {
+          "gid": 388,
+          "text": "শু",
+          "unicode": [
+            "U+09B6",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:228c3dd5ba6786e82a5f82466c1a93b689cefcd619356f4613ef6b8ca46cda0d",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "232": {
+          "gid": 232,
+          "text": "ঙ্ক",
+          "unicode": [
+            "U+0999",
+            "U+09CD",
+            "U+0995"
+          ],
+          "glyph_fingerprint": "glyph:e34953bbb6d3f49ded595084337e58e989b6012ab65dd293821b9f4fccfa0573",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "317": {
+          "gid": 317,
+          "text": "ব্র",
+          "unicode": [
+            "U+09AC",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:46d1b1bb06abcf20e6fb4f6149c103d89eb3388296f8009072ba8589b95e23cc",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "327": {
+          "gid": 327,
+          "text": "হ্ম",
+          "unicode": [
+            "U+09B9",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:f520b243d6707a54a75ce294af8413c4465945c711b870c321dfb025b6d03839",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "381": {
+          "gid": 381,
+          "text": "গু",
+          "unicode": [
+            "U+0997",
+            "U+09C1"
+          ],
+          "glyph_fingerprint": "glyph:73b77baa82123ac1c41a1021887c40dc4cd2203b0bcfce3b9ff5cd8a42d9ed04",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "414": {
+          "gid": 414,
+          "text": "দ্ম",
+          "unicode": [
+            "U+09A6",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:140ef5760e1e59b39d118dd1eb5e6115179ac38dea9a427fb26908ff51d36f0f",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "135": {
+          "gid": 135,
+          "text": "ণ্",
+          "unicode": [
+            "U+09A3",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:cedd98afed869345516c82ab0a0977e3b5f0eb54f9b0e00da94c57bf04b5c73a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "316": {
+          "gid": 316,
+          "text": "ব্ব",
+          "unicode": [
+            "U+09AC",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:5c2eff428436de8a8685c04e197a1fb5a9988e7b4600f8cc8ce6b21e30df155a",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "205": {
+          "gid": 205,
+          "text": "ষ্ব",
+          "unicode": [
+            "U+09B7",
+            "U+09CD",
+            "U+09AC"
+          ],
+          "glyph_fingerprint": "glyph:a41a15d314f44ee0c5934329fe01f9e2d541626d94383f2aa4a60ac29c084baf",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "314": {
+          "gid": 314,
+          "text": "ব্দ",
+          "unicode": [
+            "U+09AC",
+            "U+09CD",
+            "U+09A6"
+          ],
+          "glyph_fingerprint": "glyph:346ea843101d496e10a2a6c8adfbcb67148dc74c7de15a02645af6a39757648f",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "367": {
+          "gid": 367,
+          "text": "স্ম",
+          "unicode": [
+            "U+09B8",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:20ebc2ad1cfc5eea5f64e8a99c0d30ab51ed2938c42be7543f9711d0f0839720",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "376": {
+          "gid": 376,
+          "text": "ক্ষ্ম",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09B7",
+            "U+09CD",
+            "U+09AE"
+          ],
+          "glyph_fingerprint": "glyph:42b0c619c302df3f7c7991b6338a1e366a8948531490848e7df960b9ff3a9435",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        }
       }
     }
   }
