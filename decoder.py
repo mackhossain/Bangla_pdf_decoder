@@ -8,7 +8,7 @@ from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
 from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
-from src.ec_pdf_decoder.learned_mapping import font_key,glyph_key,build_fingerprint_index,load_database
+from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
@@ -22,6 +22,11 @@ def _load_learned_database(path:Path):
     return _cached_learned_database(str(path.resolve()),stat.st_mtime_ns,stat.st_size)
 
 def _clear_learned_cache(): _cached_learned_database.cache_clear()
+
+@lru_cache(maxsize=8)
+def _cached_fingerprint_map(font_id:str,raw:bytes):
+    """Compute a font's glyph fingerprints once per embedded-font byte identity."""
+    return glyph_fingerprint_map(raw)
 
 def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
     cache_dir=Path('data/embedded_fonts'); cache_dir.mkdir(parents=True,exist_ok=True)
@@ -39,24 +44,17 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,l
     for _resource,base_font,raw in embedded_fonts(pdf,page):
         section=merged.setdefault(base_font,{})
         for gid,text in ttf_gid_map(raw).items(): section.setdefault(str(gid),text)
-        fd,font_name=tempfile.mkstemp(prefix='ec_font_',suffix='.ttf'); os.close(fd); font_path=Path(font_name); font_path.write_bytes(raw)
-        try:
-            glyphs=learned.get('fonts',{}).get(font_key(raw,base_font),{}).get('glyphs',{})
-            for gid,entry in glyphs.items():
-                if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
-            font=None
-            try:
-                from fontTools.ttLib import TTFont
-                font=TTFont(str(font_path),lazy=False); glyph_count=len(font.getGlyphOrder())
-                for gid in range(glyph_count):
-                    key=str(gid)
-                    if key in section: continue
-                    try: gkey=glyph_key(font_path,gid); match=fingerprint_index.get(gkey)
-                    except Exception: continue
-                    if match is not None: section[key]=str(match.get('text',''))
-            finally:
-                if font is not None: font.close()
-        finally: font_path.unlink(missing_ok=True)
+        glyphs=learned.get('fonts',{}).get(font_key(raw,base_font),{}).get('glyphs',{})
+        for gid,entry in glyphs.items():
+            if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
+        # The old implementation opened the same TTF once per GID. For a 200+ glyph
+        # font that meant hundreds of TTFont parses on every page. Cache the complete
+        # fingerprint map by the exact embedded-font bytes instead.
+        for gid,gkey in _cached_fingerprint_map(font_key(raw,base_font),raw).items():
+            key=str(gid)
+            if key in section: continue
+            match=fingerprint_index.get(gkey)
+            if match is not None: section[key]=str(match.get('text',''))
     fd,name=tempfile.mkstemp(prefix='ec_mapping_',suffix='.json'); os.close(fd); path=Path(name); path.write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8'); return path
 
 def _flat_mapping(mapping_path:Path)->dict[str,str]:
@@ -127,15 +125,20 @@ def main()->int:
         try:
             from pypdf import PdfReader
             page_count=len(PdfReader(str(args.pdf)).pages)
-        except Exception as exc: print(f'DECODE FAILED: could not determine page count: {exc}'); return 1
+        except Exception as exc:
+            print(f'DECODE FAILED: could not determine page count: {exc}'); return 1
         all_text=[]; any_unresolved=False; learned_db=_load_learned_database(args.learned)
         for page in range(1,page_count+1):
             print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
             try:
-                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile); all_text.append(text)
+                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile)
+                all_text.append(text)
                 if args.review: learned_db=_load_learned_database(args.learned)
-                missing=report.get('missing_cids',[]); any_unresolved |= bool(missing); print(f'PAGE: {page} | MAPPED ENTRIES: {report.get("tounicode_entries",0)} | UNRESOLVED CIDs: {missing}',flush=True); print(text,flush=True)
-            except Exception as exc: print(f'PAGE {page} FAILED: {exc}',flush=True); any_unresolved=True; all_text.append('')
+                missing=report.get('missing_cids',[]); any_unresolved |= bool(missing)
+                print(f'PAGE: {page} | MAPPED ENTRIES: {report.get("tounicode_entries",0)} | UNRESOLVED CIDs: {missing}',flush=True)
+                print(text,flush=True)
+            except Exception as exc:
+                print(f'PAGE {page} FAILED: {exc}',flush=True); any_unresolved=True; all_text.append('')
         combined='\n'.join(all_text)
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
         if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
