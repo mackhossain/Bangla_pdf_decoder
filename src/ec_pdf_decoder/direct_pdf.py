@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import zlib
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,18 @@ REF_RE = re.compile(rb"(\d+)\s+(\d+)\s+R")
 HEX_RE = re.compile(rb"<([0-9A-Fa-f]+)>")
 
 
+@lru_cache(maxsize=4)
+def _cached_pdf_bytes(path: str, mtime_ns: int, size: int) -> bytes:
+    return Path(path).read_bytes()
+
+
+def read_pdf_bytes(pdf_path: Path | str) -> bytes:
+    path = Path(pdf_path).resolve()
+    stat = path.stat()
+    return _cached_pdf_bytes(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=4)
 def object_map(pdf: bytes) -> dict[int, bytes]:
     return {int(m.group(1)): m.group(3) for m in OBJ_RE.finditer(pdf)}
 
@@ -79,10 +92,6 @@ def content_refs(page_body: bytes) -> list[int]:
 
 def page_resources(objects: dict[int, bytes], page_body: bytes) -> bytes | None:
     """Resolve page Resources, including a direct dictionary with nested ExtGState."""
-    # Important: dict_value() cannot safely capture a nested <<...>> dictionary
-    # when another nested dictionary occurs before /Font. For EC PDFs the page
-    # often looks like /Resources<< /ExtGState<<...>> /Font<<...>> >>. Capture
-    # the whole page-level Resources dictionary with a small balanced scanner.
     marker = re.search(rb"/Resources\s*", page_body)
     if marker:
         pos = marker.end()
@@ -111,19 +120,12 @@ def page_resources(objects: dict[int, bytes], page_body: bytes) -> bytes | None:
 def _resource_font_entries(resources: bytes) -> list[tuple[bytes, int]]:
     """Extract only /Font entries from a resource dictionary."""
     entries: list[tuple[bytes, int]] = []
-
-    # The EC page uses /Font<< /F1 6 0 R >>. This targeted pattern avoids
-    # accidentally stopping at an earlier nested /ExtGState dictionary.
     for block in re.finditer(rb"/Font\s*<<(.{0,10000}?)>>", resources, re.S):
         for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", block.group(1)):
             entries.append((m.group(1), int(m.group(2))))
-
-    # If /Font itself is an indirect reference, resolve() is handled by the
-    # caller and this fallback handles the resulting simple dictionary.
     if not entries:
         for m in re.finditer(rb"/(\S+)\s+(\d+)\s+\d+\s+R", resources):
             entries.append((m.group(1), int(m.group(2))))
-
     seen: set[int] = set()
     return [(name, ref) for name, ref in entries if not (ref in seen or seen.add(ref))]
 
@@ -131,17 +133,12 @@ def _resource_font_entries(resources: bytes) -> list[tuple[bytes, int]]:
 def font_refs(objects: dict[int, bytes], resources: bytes | None) -> dict[bytes, int]:
     resources = resolve(objects, resources) or b""
     result: dict[bytes, int] = {}
-
-    # Handle direct /Font<<...>> first.
     result.update(dict(_resource_font_entries(resources)))
-
-    # Handle indirect /Font 123 0 R when present.
     if not result:
         font_value = dict_value(resources, b"Font")
         font_dict = resolve(objects, font_value)
         if font_dict:
             result.update(dict(_resource_font_entries(font_dict)))
-
     return result
 
 
@@ -202,6 +199,7 @@ def _glyph_name_text(name: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=8)
 def ttf_gid_map(font_bytes: bytes) -> dict[int, str]:
     font = TTFont(BytesIO(font_bytes), lazy=False)
     try:
@@ -333,7 +331,7 @@ def _apply_mapping_section(mappings: dict[int, str], section: dict[str, Any]) ->
 
 
 def analyze_page_direct(pdf_path: Path, page_number: int, mapping_path: Path | None = None) -> dict[str, Any]:
-    pdf = pdf_path.read_bytes()
+    pdf = read_pdf_bytes(pdf_path)
     objects = object_map(pdf)
     pgs = pages(objects)
     if not 1 <= page_number <= len(pgs):
