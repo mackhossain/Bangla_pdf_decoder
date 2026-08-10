@@ -1,6 +1,6 @@
 """EC Bangla PDF decoder with embedded-TTF fallback and interactive learning."""
 from __future__ import annotations
-import argparse,json,os,tempfile,unicodedata
+import argparse,json,os,tempfile
 from pathlib import Path
 from src.ec_pdf_decoder.bangla_cleanup import cleanup_bangla_text
 from src.ec_pdf_decoder.bangla_harfbuzz import choose_candidate
@@ -9,6 +9,23 @@ from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fon
 from src.ec_pdf_decoder.learned_mapping import font_key,load_database
 from src.ec_pdf_decoder.direct_review import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
+
+
+def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
+    """Preserve the embedded FontFile2 so --generate-ttf can run without a PDF."""
+    cache_dir=Path('data/embedded_fonts')
+    cache_dir.mkdir(parents=True,exist_ok=True)
+    existing=sorted(cache_dir.glob('*.ttf'))
+    if existing:
+        return existing[0]
+    for _resource,base_font,raw in embedded_fonts(pdf,page):
+        if raw:
+            safe=''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in base_font) or 'Bangla'
+            out=cache_dir/f'{safe}.ttf'
+            out.write_bytes(raw)
+            return out
+    return None
+
 
 def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)->Path:
     base=json.loads(legacy_path.read_text(encoding='utf-8')) if legacy_path.exists() else {}; learned=load_database(learned_path); merged={k:dict(v) for k,v in base.items()}
@@ -19,6 +36,7 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path)-
         for gid,entry in glyphs.items():
             if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
     fd,name=tempfile.mkstemp(prefix='ec_mapping_',suffix='.json'); os.close(fd); path=Path(name); path.write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8'); return path
+
 
 def _flat_mapping(mapping_path:Path)->dict[str,str]:
     try: data=json.loads(mapping_path.read_text(encoding='utf-8'))
@@ -32,6 +50,7 @@ def _flat_mapping(mapping_path:Path)->dict[str,str]:
             elif isinstance(value,dict) and isinstance(value.get('text'),str): flat[str(key)]=value['text']
     return flat
 
+
 def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corrections_path:Path|None=None)->str:
     mapping=_flat_mapping(mapping_path); chunks=[]
     for operation in report.get('operations',[]):
@@ -39,7 +58,8 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
         if any(token.startswith('⟦CID:') for token in tokens): selected=reordered
         else: selected,_score=choose_candidate(font_bytes,cids,original,reordered)
         chunks.append(selected)
-    return cleanup_bangla_text(unicodedata.normalize('NFC','\n'.join(chunks)),corrections_path)
+    return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
+
 
 def main()->int:
     parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text')
@@ -74,7 +94,7 @@ def main()->int:
     if args.page is None:
         parser.error('--page is required unless --generate-ttf is used')
 
-    pdf=args.pdf.read_bytes(); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); text=''; report={'missing_cids':[]}
+    pdf=args.pdf.read_bytes(); _cache_embedded_ttf(pdf,args.page); mapping_path=_materialize_mapping(pdf,args.page,args.mapping,args.learned); text=''; report={'missing_cids':[]}
     try:
         report=analyze_page_direct(args.pdf,args.page,mapping_path)
         if args.review and report['missing_cids']:
