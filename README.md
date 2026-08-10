@@ -1,4 +1,4 @@
-# EC PDF Bangla Decoder
+# Bangla PDF Bangla Decoder
 
 A local, deterministic decoder and manual reviewer for Bangla PDFs that use embedded/subsetted Bangla TrueType fonts.
 
@@ -223,7 +223,7 @@ It builds from confirmed mappings and a cached embedded Bangla TTF. If the sourc
 The output is:
 
 ```text
-EC_Bangla_Unicode.ttf
+Mack_Bangla_Unicode.ttf
 ```
 
 This is an optional utility; the normal PDF decoding and manual-review workflow does not depend on it.
