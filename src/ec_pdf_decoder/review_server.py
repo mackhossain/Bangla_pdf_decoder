@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event
 from urllib.parse import parse_qs, urlparse
+import html
 import webbrowser
 
 
@@ -22,27 +23,8 @@ class _ReviewServer:
 
     def page(self) -> str:
         base = self.html_path.read_text(encoding="utf-8")
-        form = f'''
-<section class="review-controls">
-  <h2>Enter Unicode Mapping</h2>
-  <p>Target CID/GID: <strong>{self.gid}</strong></p>
-  <form method="post" action="/save">
-    <input id="unicode" name="unicode" type="text" autocomplete="off" autofocus
-           placeholder="Type the exact Bengali character/string here">
-    <button type="submit">Save Mapping</button>
-  </form>
-  <div class="actions">
-    <form method="post" action="/skip"><button type="submit">Skip</button></form>
-    <form method="post" action="/quit"><button type="submit">Quit Review</button></form>
-  </div>
-  <p class="note">The decoder continues after Save or Skip. Saved mappings are written to learned_glyph_map.json.</p>
-</section>
-<style>
-.review-controls{margin-top:24px;padding:20px;border:2px solid #333;border-radius:10px;background:#fafafa}
-.review-controls h2{margin-top:0}.review-controls input{font-size:28px;width:min(100%,700px);padding:10px;border:2px solid #777;border-radius:6px}
-.review-controls button{font-size:18px;padding:10px 18px;margin:8px 6px 0 0;border:0;border-radius:6px;background:#222;color:white;cursor:pointer}
-.review-controls .actions{display:flex;gap:8px}.review-controls .actions form{display:inline}
-</style></body>'''
+        gid = html.escape(str(self.gid))
+        form = f'''\n<section class="review-controls">\n  <h2>Enter Unicode Mapping</h2>\n  <p>Target CID/GID: <strong>{gid}</strong></p>\n  <form method="post" action="/save">\n    <input id="unicode" name="unicode" type="text" autocomplete="off" autofocus\n           placeholder="Type the exact Bengali character/string here">\n    <button type="submit">Save Mapping</button>\n  </form>\n  <div class="actions">\n    <form method="post" action="/skip"><button type="submit">Skip</button></form>\n    <form method="post" action="/quit"><button type="submit">Quit Review</button></form>\n  </div>\n  <p class="note">The decoder continues after Save or Skip. Saved mappings are written to learned_glyph_map.json.</p>\n</section>\n<style>\n.review-controls{{margin-top:24px;padding:20px;border:2px solid #333;border-radius:10px;background:#fafafa}}\n.review-controls h2{{margin-top:0}}\n.review-controls input{{font-size:28px;width:min(100%,700px);padding:10px;border:2px solid #777;border-radius:6px}}\n.review-controls button{{font-size:18px;padding:10px 18px;margin:8px 6px 0 0;border:0;border-radius:6px;background:#222;color:white;cursor:pointer}}\n.review-controls .actions{{display:flex;gap:8px}}\n.review-controls .actions form{{display:inline}}\n</style></body>'''
         return base.replace("</body>", form, 1)
 
     def run(self):
@@ -51,8 +33,7 @@ class _ReviewServer:
         class Handler(BaseHTTPRequestHandler):
             def _response(self, title: str, message: str, close: bool = False):
                 extra = "<script>setTimeout(()=>window.close(),800)</script>" if close else "<p><a href='/'>Back to review</a></p>"
-                body = f'''<!doctype html><html><head><meta charset="utf-8"><title>{title}</title></head>
-<body style="font-family:Arial,sans-serif;margin:40px"><h1>{title}</h1><p style="font-size:20px">{message}</p>{extra}</body></html>'''.encode("utf-8")
+                body = f'''<!doctype html><html><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>\n<body style="font-family:Arial,sans-serif;margin:40px"><h1>{html.escape(title)}</h1><p style="font-size:20px">{html.escape(message)}</p>{extra}</body></html>'''.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -63,7 +44,11 @@ class _ReviewServer:
                 if urlparse(self.path).path != "/":
                     self.send_error(404)
                     return
-                body = review.page().encode("utf-8")
+                try:
+                    body = review.page().encode("utf-8")
+                except Exception as exc:
+                    self.send_error(500, f"Review page generation failed: {exc}")
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
