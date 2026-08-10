@@ -83,6 +83,26 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
                     print(f'AUTO-REUSED GID {gid} by glyph fingerprint -> {text}', flush=True); continue
 
                 html_path = Path.cwd() / f"glyph_review_{gid}.html"; line_cids = operation_lines.get(gid, [gid])
+
+                # Resolve every other CID in the review line by the global fingerprint index
+                # before rendering the HTML. This prevents a previously learned glyph such as
+                # CID 207 from appearing as an unnecessary CID marker just because it is also
+                # present in the same operation line as the genuinely unknown target.
+                for line_cid in line_cids:
+                    if line_cid == gid or line_cid in current_map:
+                        continue
+                    if line_cid < 0 or line_cid >= len(font_path.read_bytes()):
+                        continue
+                    line_gkey = glyph_key(font_path, line_cid)
+                    line_reused = fingerprint_index.get(line_gkey)
+                    if line_reused is not None:
+                        line_text = str(line_reused["text"])
+                        remember_mapping(db, fkey=fkey, base_font=base_font, gid=line_cid, gkey=line_gkey, text=line_text, source="glyph_fingerprint_reuse", confidence=1.0)
+                        current_map[line_cid] = line_text
+                        fingerprint_index[line_gkey] = db["fonts"][fkey]["glyphs"][str(line_cid)]
+                        print(f'AUTO-REUSED LINE GID {line_cid} by glyph fingerprint -> {line_text}', flush=True)
+                save_database(db_path, db)
+
                 _write_html(html_path, font_path, gid, line_cids, current_map); print(f"HTML: {html_path.resolve()}", flush=True)
                 try: webbrowser.open(html_path.resolve().as_uri(), new=2)
                 except Exception as exc: print(f"Could not automatically open browser: {exc}", flush=True)
