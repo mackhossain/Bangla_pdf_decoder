@@ -91,8 +91,6 @@ def run(pdf_path: Path, page: int, db_path: Path, candidate_path: Path, only_gid
                 for line_cid in line_cids:
                     if line_cid == gid or line_cid in current_map:
                         continue
-                    if line_cid < 0 or line_cid >= len(font_path.read_bytes()):
-                        continue
                     line_gkey = glyph_key(font_path, line_cid)
                     line_reused = fingerprint_index.get(line_gkey)
                     if line_reused is not None:
