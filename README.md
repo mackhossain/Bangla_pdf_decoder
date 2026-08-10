@@ -22,6 +22,58 @@ Save diagnostics:
 python decoder.py 261694_com_1267_female_without_photo_71_2025-11-24.pdf --page 3 --json page3.json
 ```
 
+## Use from another Python program
+
+The decoder can also be imported directly. The public `decode_pdf()` function uses the same decoding pipeline as the command-line program.
+
+Normal decoding:
+
+```python
+import decoder
+
+text = decoder.decode_pdf(
+    "261825_com_463_male_without_photo_26_2025-11-24.pdf",
+    page=13,
+)
+
+print(text)
+```
+
+Decoding with the same interactive manual review workflow:
+
+```python
+import decoder
+
+text = decoder.decode_pdf(
+    "261825_com_463_male_without_photo_26_2025-11-24.pdf",
+    page=13,
+    review=True,
+)
+
+print(text)
+```
+
+`review=True` is the Python equivalent of:
+
+```cmd
+python decoder.py 261825_com_463_male_without_photo_26_2025-11-24.pdf --page 13 --review
+```
+
+A `pathlib.Path` can also be supplied:
+
+```python
+from pathlib import Path
+import decoder
+
+text = decoder.decode_pdf(
+    Path("261825_com_463_male_without_photo_26_2025-11-24.pdf"),
+    page=13,
+    review=True,
+)
+```
+
+The CLI remains fully supported; importing `decoder` is an additional API and does not replace the command-line interface.
+
 ## Manual glyph review
 
 When a page contains genuinely unresolved CID/GID values:
