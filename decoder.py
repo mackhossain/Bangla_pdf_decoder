@@ -9,7 +9,7 @@ from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
-from src.ec_pdf_decoder.direct_review import run as review_run
+from src.ec_pdf_decoder.direct_review_v2 import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
@@ -47,9 +47,6 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,l
         glyphs=learned.get('fonts',{}).get(font_key(raw,base_font),{}).get('glyphs',{})
         for gid,entry in glyphs.items():
             if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
-        # The old implementation opened the same TTF once per GID. For a 200+ glyph
-        # font that meant hundreds of TTFont parses on every page. Cache the complete
-        # fingerprint map by the exact embedded-font bytes instead.
         for gid,gkey in _cached_fingerprint_map(font_key(raw,base_font),raw).items():
             key=str(gid)
             if key in section: continue
