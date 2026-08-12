@@ -29,13 +29,14 @@ class _ReviewServer:
         # suggestion controls. Failure is intentionally non-fatal; manual input
         # remains available exactly as before.
         try:
-            tmp = Path(tempfile.gettempdir())
-            fonts = list(tmp.glob("ec_pdf_font_*/embedded.ttf"))
-            font_path = max(fonts, key=lambda p: p.stat().st_mtime) if fonts else None
-            candidate_path = Path.cwd() / "data" / "bangla_conjuncts_comprehensive_validated.json"
-            if font_path and candidate_path.exists():
-                add_visual_suggestions(self.html_path, font_path, font_path.read_bytes(), self.gid, candidate_path)
-                base = self.html_path.read_text(encoding="utf-8")
+            if 'visual-suggestions' not in base:
+                tmp = Path(tempfile.gettempdir())
+                fonts = list(tmp.glob("ec_pdf_font_*/embedded.ttf"))
+                font_path = max(fonts, key=lambda p: p.stat().st_mtime) if fonts else None
+                candidate_path = Path.cwd() / "data" / "bangla_conjuncts_comprehensive_validated.json"
+                if font_path and candidate_path.exists():
+                    add_visual_suggestions(self.html_path, font_path, font_path.read_bytes(), self.gid, candidate_path)
+                    base = self.html_path.read_text(encoding="utf-8")
         except Exception:
             pass
         return base.replace("</body>", form + "</body>", 1)
