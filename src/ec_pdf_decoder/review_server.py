@@ -1,7 +1,4 @@
-"""Local browser UI for manual glyph review.
-
-Runs only on loopback and blocks the decoder until the user saves, skips, or quits.
-"""
+"""Local browser UI for manual glyph review."""
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,7 +6,10 @@ from pathlib import Path
 from threading import Event
 from urllib.parse import parse_qs, urlparse
 import html
+import tempfile
 import webbrowser
+
+from .visual_suggestions import add_visual_suggestions
 
 
 class _ReviewServer:
@@ -24,8 +24,21 @@ class _ReviewServer:
     def page(self) -> str:
         base = self.html_path.read_text(encoding="utf-8")
         gid = html.escape(str(self.gid))
-        form = f'''\n<section class="review-controls">\n  <h2>Enter Unicode Mapping</h2>\n  <p>Target CID/GID: <strong>{gid}</strong></p>\n  <form method="post" action="/save">\n    <input id="unicode" name="unicode" type="text" autocomplete="off" autofocus\n           placeholder="Type the exact Bengali character/string here">\n    <button type="submit">Save Mapping</button>\n  </form>\n  <div class="actions">\n    <form method="post" action="/skip"><button type="submit">Skip</button></form>\n    <form method="post" action="/quit"><button type="submit">Quit Review</button></form>\n  </div>\n  <p class="note">The decoder continues after Save or Skip. Saved mappings are written to learned_glyph_map.json.</p>\n</section>\n<style>\n.review-controls{{margin-top:24px;padding:20px;border:2px solid #333;border-radius:10px;background:#fafafa}}\n.review-controls h2{{margin-top:0}}\n.review-controls input{{font-size:28px;width:min(100%,700px);padding:10px;border:2px solid #777;border-radius:6px}}\n.review-controls button{{font-size:18px;padding:10px 18px;margin:8px 6px 0 0;border:0;border-radius:6px;background:#222;color:white;cursor:pointer}}\n.review-controls .actions{{display:flex;gap:8px}}\n.review-controls .actions form{{display:inline}}\n</style></body>'''
-        return base.replace("</body>", form, 1)
+        form = f'''\n<section class="review-controls">\n  <h2>Enter Unicode Mapping</h2>\n  <p>Target CID/GID: <strong>{gid}</strong></p>\n  <form method="post" action="/save">\n    <input id="unicode" name="unicode" type="text" autocomplete="off" autofocus\n           placeholder="Type the exact Bengali character/string here">\n    <button type="submit">Save Mapping</button>\n  </form>\n  <div class="actions">\n    <form method="post" action="/skip"><button type="submit">Skip</button></form>\n    <form method="post" action="/quit"><button type="submit">Quit Review</button></form>\n  </div>\n  <p class="note">The decoder continues after Save or Skip. Saved mappings are written to learned_glyph_map.json.</p>\n</section>\n<style>\n.review-controls{{margin-top:24px;padding:20px;border:2px solid #333;border-radius:10px;background:#fafafa}}\n.review-controls h2{{margin-top:0}}\n.review-controls input{{font-size:28px;width:min(100%,700px);padding:10px;border:2px solid #777;border-radius:6px}}\n.review-controls button{{font-size:18px;padding:10px 18px;margin:8px 6px 0 0;border:0;border-radius:6px;background:#222;color:white;cursor:pointer}}\n.review-controls .actions{{display:flex;gap:8px}}\n.review-controls .actions form{{display:inline}}\n</style>\n'''
+        # V2 addition only: keep the existing review UI and append the visual
+        # suggestion controls. Failure is intentionally non-fatal; manual input
+        # remains available exactly as before.
+        try:
+            tmp = Path(tempfile.gettempdir())
+            fonts = list(tmp.glob("ec_pdf_font_*/embedded.ttf"))
+            font_path = max(fonts, key=lambda p: p.stat().st_mtime) if fonts else None
+            candidate_path = Path.cwd() / "data" / "bangla_conjuncts_comprehensive_validated.json"
+            if font_path and candidate_path.exists():
+                add_visual_suggestions(self.html_path, font_path, font_path.read_bytes(), self.gid, candidate_path)
+                base = self.html_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+        return base.replace("</body>", form + "</body>", 1)
 
     def run(self):
         review = self
