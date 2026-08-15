@@ -87,7 +87,7 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
     try:
         t=time.perf_counter(); report=analyze_page_direct(pdf_path,page,materialized); timings['page_analysis']=time.perf_counter()-t
         if review and report['missing_cids']:
-            t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
+            t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts_comprehensive_validated.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
             _clear_learned_cache(); learned_db=_load_learned_database(learned_path)
             try: materialized.unlink(missing_ok=True)
             except PermissionError: pass
