@@ -21,12 +21,9 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
 
 
 def _standalone_bengali_candidates() -> list[tuple[str, str]]:
-    """Return printable standalone Bengali Unicode characters as candidates."""
     result: list[tuple[str, str]] = []
     for codepoint in range(0x0980, 0x0A00):
         char = chr(codepoint)
-        # Virama is used inside shaped combinations and is not useful as a
-        # standalone visual suggestion here.
         if char == "\u09cd" or not char.isprintable():
             continue
         result.append((char, f"U+{codepoint:04X}"))
@@ -44,8 +41,6 @@ def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[s
     result: list[tuple[str, str]] = []
     seen: set[str] = set()
 
-    # Primary source: the user's comprehensive conjunct database. We use only
-    # glyph + combination; example text is intentionally ignored.
     for item in data.get("conjuncts", []) if isinstance(data, dict) else []:
         if not isinstance(item, dict):
             continue
@@ -58,8 +53,6 @@ def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[s
         seen.add(glyph)
         result.append((glyph, combination))
 
-    # A PDF CID can also be a single Bengali character, not a conjunct.
-    # Add the complete Bengali Unicode block so CID 340 -> চ can be matched.
     for glyph, combination in _standalone_bengali_candidates():
         if glyph in seen:
             continue
@@ -71,10 +64,7 @@ def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[s
 
 def _candidates(path: Path) -> list[dict[str, str]]:
     path_str, mtime_ns, size = _file_signature(path)
-    return [
-        {"glyph": glyph, "combination": combination}
-        for glyph, combination in _cached_candidates(path_str, mtime_ns, size)
-    ]
+    return [{"glyph": g, "combination": c} for g, c in _cached_candidates(path_str, mtime_ns, size)]
 
 
 def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
@@ -157,7 +147,7 @@ def _cached_candidate_svgs(
     candidate_path_str: str,
     candidate_mtime_ns: int,
     candidate_size: int,
-) -> tuple[tuple[str, str, str], ...]:
+) -> tuple[tuple[str, str, str, tuple[int, ...]], ...]:
     from fontTools.ttLib import TTFont
 
     candidate_path = Path(candidate_path_str)
@@ -170,7 +160,7 @@ def _cached_candidate_svgs(
                 continue
             svg = _svg_for_gids(font, shaped)
             if svg:
-                result.append((item["glyph"], item["combination"], svg))
+                result.append((item["glyph"], item["combination"], svg, tuple(shaped)))
         return tuple(result)
     finally:
         font.close()
@@ -194,15 +184,18 @@ def add_visual_suggestions(
         candidate_mtime,
         candidate_size,
     )
-    candidates = [
-        {"glyph": glyph, "combination": combination, "svg": svg}
-        for glyph, combination, svg in cached
-    ]
 
+    candidates = [
+        {"glyph": glyph, "combination": combination, "svg": svg, "gids": list(gids)}
+        for glyph, combination, svg, gids in cached
+    ]
     payload = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     target_json = json.dumps(target, ensure_ascii=False)
-    script = f'''<section class="visual-suggestions"><h2>Visual suggestions</h2><p class="note">Candidates use the same embedded PDF font. The browser rasterizes the red target glyph and every candidate to a canvas, then compares every pixel. The top 3 highest visual matches are shown so you can inspect them before we require an exact 100% match.</p><div id="visual-status" class="suggestion-status">Checking visual matches…</div><div id="visual-buttons" class="suggestion-buttons"></div></section><script>
-window.__TARGET_SVG__={target_json};window.__VISUAL_CANDIDATES__={payload};(async()=>{{const s=document.getElementById('visual-status'),b=document.getElementById('visual-buttons'),N=128;const render=svg=>new Promise((ok,bad)=>{{const i=new Image(),u=URL.createObjectURL(new Blob([svg],{{type:'image/svg+xml;charset=utf-8'}}));i.onload=()=>{{const c=document.createElement('canvas');c.width=N;c.height=N;const x=c.getContext('2d',{{willReadFrequently:true}});x.drawImage(i,0,0,N,N);URL.revokeObjectURL(u);ok(x.getImageData(0,0,N,N).data)}};i.onerror=()=>{{URL.revokeObjectURL(u);bad()}};i.src=u}});try{{const t=await render(window.__TARGET_SVG__),ranked=[];for(const c of window.__VISUAL_CANDIDATES__){{const p=await render(c.svg);const n=Math.min(t.length,p.length);let same=0;for(let i=0;i<n;i++)if(t[i]===p[i])same++;const score=n?same/n:0;ranked.push({{...c,score}})}}ranked.sort((a,b)=>b.score-a.score);const top=ranked.slice(0,3);if(!top.length){{s.textContent='No visual candidates available — use manual input below.';return}}s.textContent='Top 3 visual matches — inspect before saving:';for(const c of top){{const wrap=document.createElement('span');wrap.className='suggestion-wrap';const x=document.createElement('button');x.type='button';x.className='suggestion-button';x.title=c.combination;x.textContent=c.glyph;x.onclick=()=>{{const input=document.getElementById('unicode');if(input){{input.value=c.glyph;input.focus();}}}};const pct=document.createElement('small');pct.className='suggestion-score';pct.textContent=(c.score*100).toFixed(2)+'%';wrap.appendChild(x);wrap.appendChild(pct);b.appendChild(wrap)}}}}catch(e){{s.textContent='Visual comparison unavailable — use manual input below.';console.error(e)}}}})();</script>'''
+    target_gid_json = json.dumps(int(gid))
+
+    script = f'''<section class="visual-suggestions"><h2>Visual suggestions</h2><p class="note">The red PDF glyph is the reference. Every conjunct in the comprehensive database and every standalone Bengali character is rendered with the same embedded PDF font. Pixel similarity is calculated on the glyph image; an exact embedded-font GID identity is also treated as 100% because it proves the candidate shapes to the exact PDF glyph.</p><div id="visual-status" class="suggestion-status">Checking visual matches…</div><div id="visual-buttons" class="suggestion-buttons"></div></section><script>
+window.__TARGET_SVG__={target_json};window.__TARGET_GID__={target_gid_json};window.__VISUAL_CANDIDATES__={payload};(async()=>{{const s=document.getElementById('visual-status'),b=document.getElementById('visual-buttons'),N=128;const render=svg=>new Promise((ok,bad)=>{{const i=new Image(),u=URL.createObjectURL(new Blob([svg],{{type:'image/svg+xml;charset=utf-8'}}));i.onload=()=>{{const c=document.createElement('canvas');c.width=N;c.height=N;const x=c.getContext('2d',{{willReadFrequently:true}});x.drawImage(i,0,0,N,N);URL.revokeObjectURL(u);ok(x.getImageData(0,0,N,N).data)}};i.onerror=()=>{{URL.revokeObjectURL(u);bad()}};i.src=u}});try{{const t=await render(window.__TARGET_SVG__),ranked=[];for(const c of window.__VISUAL_CANDIDATES__){{const p=await render(c.svg);const n=Math.min(t.length,p.length);let same=0;for(let i=0;i<n;i++)if(t[i]===p[i])same++;let score=n?same/n:0;let exactGid=false;if(c.gids.length===1&&c.gids[0]===window.__TARGET_GID__){{score=1;exactGid=true}}ranked.push({{...c,score,exactGid}})}}ranked.sort((a,b)=>b.score-a.score);const top=ranked.slice(0,3);if(!top.length){{s.textContent='No visual candidates available — use manual input below.';return}}s.textContent='Top 3 visual matches — exact embedded-glyph identity is shown as 100%:';for(const c of top){{const wrap=document.createElement('span');wrap.className='suggestion-wrap';const x=document.createElement('button');x.type='button';x.className='suggestion-button';x.title=c.combination;x.textContent=c.glyph;x.onclick=()=>{{const input=document.getElementById('unicode');if(input){{input.value=c.glyph;input.focus();}}}};const pct=document.createElement('small');pct.className='suggestion-score';pct.textContent=(c.score*100).toFixed(2)+'%'+(c.exactGid?' ✓ exact GID':'');wrap.appendChild(x);wrap.appendChild(pct);b.appendChild(wrap)}}}}catch(e){{s.textContent='Visual comparison unavailable — use manual input below.';console.error(e)}}}})();</script>'''
+
     html = html_path.read_text(encoding="utf-8")
     css = '<style>.visual-suggestions{margin-top:18px;padding:16px;border:1px solid #888;border-radius:8px;background:#fafafa}.suggestion-buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}.suggestion-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:3px}.suggestion-button{font-size:28px;padding:8px 14px;border:2px solid #777;border-radius:7px;background:white;cursor:pointer}.suggestion-button:hover{border-color:#111;background:#eee}.suggestion-score{font-size:14px;font-weight:600}.suggestion-status{font-weight:600}</style>'
     html = html.replace('</head>', css + '</head>', 1).replace('</body>', script + '</body>', 1)
