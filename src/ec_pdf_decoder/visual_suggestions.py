@@ -1,20 +1,39 @@
-"""Browser-side exact visual suggestion support for manual CID review."""
+"""Browser-side exact visual suggestion support for manual CID review.
+
+v2-only: the v1 reviewer remains untouched. Candidate data and rendered
+candidate SVGs are cached in RAM per embedded-font identity so repeated
+unknown-CID reviews do not rebuild the same candidate set.
+"""
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
 from .bangla_harfbuzz import shape_gids
 
 
-def _candidates(path: Path) -> list[dict[str, str]]:
+def _file_signature(path: Path) -> tuple[str, int, int]:
+    resolved = str(path.resolve())
+    try:
+        st = path.stat()
+        return resolved, st.st_mtime_ns, st.st_size
+    except OSError:
+        return resolved, -1, -1
+
+
+@lru_cache(maxsize=4)
+def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[str, str], ...]:
+    path = Path(path_str)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    result = []
-    seen = set()
+        return ()
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
     for item in data.get("conjuncts", []):
         if not isinstance(item, dict):
             continue
@@ -25,13 +44,23 @@ def _candidates(path: Path) -> list[dict[str, str]]:
         if not isinstance(combination, str) or not combination:
             continue
         seen.add(glyph)
-        result.append({"glyph": glyph, "combination": combination})
-    return result
+        result.append((glyph, combination))
+    return tuple(result)
+
+
+def _candidates(path: Path) -> list[dict[str, str]]:
+    path_str, mtime_ns, size = _file_signature(path)
+    return [
+        {"glyph": glyph, "combination": combination}
+        for glyph, combination in _cached_candidates(path_str, mtime_ns, size)
+    ]
 
 
 def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
+    """Render one shaped glyph sequence into a normalized fixed-size SVG canvas."""
     from fontTools.pens.boundsPen import BoundsPen
     from fontTools.pens.svgPathPen import SVGPathPen
+
     order = font.getGlyphOrder()
     glyph_set = font.getGlyphSet()
     hmtx = font["hmtx"]
@@ -54,6 +83,9 @@ def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
         cursor += float(hmtx[name][0])
     if bounds is None:
         return None
+
+    # Normalize by actual ink bounds so an embedded ligature glyph and the
+    # equivalent shaped Unicode sequence can compare on the same canvas.
     min_x, min_y, max_x, max_y = bounds
     pad = max(upm * 0.04, 4.0)
     min_x -= pad
@@ -65,6 +97,7 @@ def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
     scale = min((size - 2) / width, (size - 2) / height)
     tx = (size - width * scale) / 2 - min_x * scale
     ty = (size + height * scale) / 2 + min_y * scale
+
     parts = []
     cursor = 0.0
     for gid in gids:
@@ -85,11 +118,42 @@ def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
     )
 
 
-def _normalized_svg(font_path: Path, gid: int) -> str:
+def _font_identity(font_bytes: bytes) -> str:
+    return hashlib.sha256(font_bytes).hexdigest()
+
+
+@lru_cache(maxsize=8)
+def _cached_target_svg(font_identity: str, font_bytes: bytes, gid: int) -> str:
     from fontTools.ttLib import TTFont
-    font = TTFont(str(font_path), lazy=False)
+    font = TTFont(io.BytesIO(font_bytes), lazy=False)
     try:
         return _svg_for_gids(font, [gid]) or ""
+    finally:
+        font.close()
+
+
+@lru_cache(maxsize=4)
+def _cached_candidate_svgs(
+    font_identity: str,
+    font_bytes: bytes,
+    candidate_path_str: str,
+    candidate_mtime_ns: int,
+    candidate_size: int,
+) -> tuple[tuple[str, str, str], ...]:
+    from fontTools.ttLib import TTFont
+
+    candidate_path = Path(candidate_path_str)
+    font = TTFont(io.BytesIO(font_bytes), lazy=False)
+    try:
+        result = []
+        for item in _candidates(candidate_path):
+            shaped = shape_gids(font_bytes, item["glyph"])
+            if not shaped:
+                continue
+            svg = _svg_for_gids(font, shaped)
+            if svg:
+                result.append((item["glyph"], item["combination"], svg))
+        return tuple(result)
     finally:
         font.close()
 
@@ -101,22 +165,21 @@ def add_visual_suggestions(
     gid: int,
     candidate_path: Path,
 ) -> None:
-    """Append exact canvas-based visual suggestions to the existing review HTML."""
-    from fontTools.ttLib import TTFont
-
-    target = _normalized_svg(font_path, gid)
-    candidates = []
-    font = TTFont(str(font_path), lazy=False)
-    try:
-        for item in _candidates(candidate_path):
-            shaped = shape_gids(font_bytes, item["glyph"])
-            if not shaped:
-                continue
-            svg = _svg_for_gids(font, shaped)
-            if svg:
-                candidates.append({**item, "svg": svg})
-    finally:
-        font.close()
+    """Append exact visual suggestions to the existing v1 review HTML."""
+    font_identity = _font_identity(font_bytes)
+    target = _cached_target_svg(font_identity, font_bytes, int(gid))
+    candidate_str, candidate_mtime, candidate_size = _file_signature(candidate_path)
+    cached = _cached_candidate_svgs(
+        font_identity,
+        font_bytes,
+        candidate_str,
+        candidate_mtime,
+        candidate_size,
+    )
+    candidates = [
+        {"glyph": glyph, "combination": combination, "svg": svg}
+        for glyph, combination, svg in cached
+    ]
 
     payload = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     target_json = json.dumps(target, ensure_ascii=False)
