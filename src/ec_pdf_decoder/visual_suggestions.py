@@ -1,9 +1,4 @@
-"""Browser-side exact visual suggestion support for manual CID review.
-
-v2-only: the v1 reviewer remains untouched. Candidate data and rendered
-candidate SVGs are cached in RAM per embedded-font identity so repeated
-unknown-CID reviews do not rebuild the same candidate set.
-"""
+"""Browser-side exact visual suggestion support for manual CID review."""
 from __future__ import annotations
 
 import hashlib
@@ -57,7 +52,6 @@ def _candidates(path: Path) -> list[dict[str, str]]:
 
 
 def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
-    """Render one shaped glyph sequence into a normalized fixed-size SVG canvas."""
     from fontTools.pens.boundsPen import BoundsPen
     from fontTools.pens.svgPathPen import SVGPathPen
 
@@ -84,8 +78,6 @@ def _svg_for_gids(font, gids: list[int], size: int = 128) -> str | None:
     if bounds is None:
         return None
 
-    # Normalize by actual ink bounds so an embedded ligature glyph and the
-    # equivalent shaped Unicode sequence can compare on the same canvas.
     min_x, min_y, max_x, max_y = bounds
     pad = max(upm * 0.04, 4.0)
     min_x -= pad
@@ -165,7 +157,7 @@ def add_visual_suggestions(
     gid: int,
     candidate_path: Path,
 ) -> None:
-    """Append exact visual suggestions to the existing v1 review HTML."""
+    """Append exact visual suggestions without changing the existing save flow."""
     font_identity = _font_identity(font_bytes)
     target = _cached_target_svg(font_identity, font_bytes, int(gid))
     candidate_str, candidate_mtime, candidate_size = _file_signature(candidate_path)
@@ -184,7 +176,7 @@ def add_visual_suggestions(
     payload = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     target_json = json.dumps(target, ensure_ascii=False)
     script = f'''<section class="visual-suggestions"><h2>Visual suggestions</h2><p class="note">Candidates use the same embedded PDF font. The browser rasterizes the target and each candidate to a canvas and compares every pixel. Only exact 100% matches are offered.</p><div id="visual-status" class="suggestion-status">Checking visual matches…</div><div id="visual-buttons" class="suggestion-buttons"></div></section><script>
-window.__TARGET_SVG__={target_json};window.__VISUAL_CANDIDATES__={payload};(async()=>{{const s=document.getElementById('visual-status'),b=document.getElementById('visual-buttons'),N=128;const render=svg=>new Promise((ok,bad)=>{{const i=new Image(),u=URL.createObjectURL(new Blob([svg],{{type:'image/svg+xml;charset=utf-8'}}));i.onload=()=>{{const c=document.createElement('canvas');c.width=N;c.height=N;const x=c.getContext('2d',{{willReadFrequently:true}});x.drawImage(i,0,0,N,N);URL.revokeObjectURL(u);ok(x.getImageData(0,0,N,N).data)}};i.onerror=()=>{{URL.revokeObjectURL(u);bad()}};i.src=u}});try{{const t=await render(window.__TARGET_SVG__),m=[];for(const c of window.__VISUAL_CANDIDATES__){{const p=await render(c.svg);let same=t.length===p.length;for(let i=0;same&&i<t.length;i++)same=t[i]===p[i];if(same)m.push(c)}}if(!m.length){{s.textContent='No exact visual match found — use manual input below.';return}}s.textContent='Exact visual match(es) found:';for(const c of m){{const x=document.createElement('button');x.type='button';x.className='suggestion-button';x.title=c.combination;x.textContent=c.glyph;x.onclick=()=>{{const input=document.getElementById('unicode');input.value=c.glyph;input.focus();document.querySelector('form[action="/save"]').requestSubmit()}};b.appendChild(x)}}}}catch(e){{s.textContent='Visual comparison unavailable — use manual input below.';console.error(e)}}}})();</script>'''
+window.__TARGET_SVG__={target_json};window.__VISUAL_CANDIDATES__={payload};(async()=>{{const s=document.getElementById('visual-status'),b=document.getElementById('visual-buttons'),N=128;const render=svg=>new Promise((ok,bad)=>{{const i=new Image(),u=URL.createObjectURL(new Blob([svg],{{type:'image/svg+xml;charset=utf-8'}}));i.onload=()=>{{const c=document.createElement('canvas');c.width=N;c.height=N;const x=c.getContext('2d',{{willReadFrequently:true}});x.drawImage(i,0,0,N,N);URL.revokeObjectURL(u);ok(x.getImageData(0,0,N,N).data)}};i.onerror=()=>{{URL.revokeObjectURL(u);bad()}};i.src=u}});try{{const t=await render(window.__TARGET_SVG__),m=[];for(const c of window.__VISUAL_CANDIDATES__){{const p=await render(c.svg);let same=t.length===p.length;for(let i=0;same&&i<t.length;i++)same=t[i]===p[i];if(same)m.push(c)}}if(!m.length){{s.textContent='No exact visual match found — use manual input below.';return}}s.textContent='Exact visual match(es) found:';for(const c of m){{const x=document.createElement('button');x.type='button';x.className='suggestion-button';x.title=c.combination;x.textContent=c.glyph;x.onclick=()=>{{const input=document.getElementById('unicode');if(input){{input.value=c.glyph;input.focus();}}}};b.appendChild(x)}}}}catch(e){{s.textContent='Visual comparison unavailable — use manual input below.';console.error(e)}}}})();</script>'''
     html = html_path.read_text(encoding="utf-8")
     css = '<style>.visual-suggestions{margin-top:18px;padding:16px;border:1px solid #888;border-radius:8px;background:#fafafa}.suggestion-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.suggestion-button{font-size:28px;padding:8px 14px;border:2px solid #777;border-radius:7px;background:white;cursor:pointer}.suggestion-button:hover{border-color:#111;background:#eee}.suggestion-status{font-weight:600}</style>'
     html = html.replace('</head>', css + '</head>', 1).replace('</body>', script + '</body>', 1)
