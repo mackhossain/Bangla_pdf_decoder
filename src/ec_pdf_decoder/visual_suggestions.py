@@ -20,16 +20,33 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
         return resolved, -1, -1
 
 
+def _standalone_bengali_candidates() -> list[tuple[str, str]]:
+    """Return printable standalone Bengali Unicode characters as candidates."""
+    result: list[tuple[str, str]] = []
+    for codepoint in range(0x0980, 0x0A00):
+        char = chr(codepoint)
+        # Virama is used inside shaped combinations and is not useful as a
+        # standalone visual suggestion here.
+        if char == "\u09cd" or not char.isprintable():
+            continue
+        result.append((char, f"U+{codepoint:04X}"))
+    return result
+
+
 @lru_cache(maxsize=4)
 def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[str, str], ...]:
     path = Path(path_str)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ()
+        data = {}
+
     result: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for item in data.get("conjuncts", []):
+
+    # Primary source: the user's comprehensive conjunct database. We use only
+    # glyph + combination; example text is intentionally ignored.
+    for item in data.get("conjuncts", []) if isinstance(data, dict) else []:
         if not isinstance(item, dict):
             continue
         glyph = item.get("glyph")
@@ -40,6 +57,15 @@ def _cached_candidates(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[s
             continue
         seen.add(glyph)
         result.append((glyph, combination))
+
+    # A PDF CID can also be a single Bengali character, not a conjunct.
+    # Add the complete Bengali Unicode block so CID 340 -> চ can be matched.
+    for glyph, combination in _standalone_bengali_candidates():
+        if glyph in seen:
+            continue
+        seen.add(glyph)
+        result.append((glyph, combination))
+
     return tuple(result)
 
 
@@ -175,7 +201,7 @@ def add_visual_suggestions(
 
     payload = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     target_json = json.dumps(target, ensure_ascii=False)
-    script = f'''<section class="visual-suggestions"><h2>Visual suggestions</h2><p class="note">Candidates use the same embedded PDF font. The browser rasterizes the target and each candidate to a canvas and compares every pixel. Only exact 100% matches are offered.</p><div id="visual-status" class="suggestion-status">Checking visual matches…</div><div id="visual-buttons" class="suggestion-buttons"></div></section><script>
+    script = f'''<section class="visual-suggestions"><h2>Visual suggestions</h2><p class="note">Candidates use the same embedded PDF font. The browser rasterizes the red target glyph and every candidate to a canvas, then compares every pixel. Only exact 100% matches are offered.</p><div id="visual-status" class="suggestion-status">Checking visual matches…</div><div id="visual-buttons" class="suggestion-buttons"></div></section><script>
 window.__TARGET_SVG__={target_json};window.__VISUAL_CANDIDATES__={payload};(async()=>{{const s=document.getElementById('visual-status'),b=document.getElementById('visual-buttons'),N=128;const render=svg=>new Promise((ok,bad)=>{{const i=new Image(),u=URL.createObjectURL(new Blob([svg],{{type:'image/svg+xml;charset=utf-8'}}));i.onload=()=>{{const c=document.createElement('canvas');c.width=N;c.height=N;const x=c.getContext('2d',{{willReadFrequently:true}});x.drawImage(i,0,0,N,N);URL.revokeObjectURL(u);ok(x.getImageData(0,0,N,N).data)}};i.onerror=()=>{{URL.revokeObjectURL(u);bad()}};i.src=u}});try{{const t=await render(window.__TARGET_SVG__),m=[];for(const c of window.__VISUAL_CANDIDATES__){{const p=await render(c.svg);let same=t.length===p.length;for(let i=0;same&&i<t.length;i++)same=t[i]===p[i];if(same)m.push(c)}}if(!m.length){{s.textContent='No exact visual match found — use manual input below.';return}}s.textContent='Exact visual match(es) found:';for(const c of m){{const x=document.createElement('button');x.type='button';x.className='suggestion-button';x.title=c.combination;x.textContent=c.glyph;x.onclick=()=>{{const input=document.getElementById('unicode');if(input){{input.value=c.glyph;input.focus();}}}};b.appendChild(x)}}}}catch(e){{s.textContent='Visual comparison unavailable — use manual input below.';console.error(e)}}}})();</script>'''
     html = html_path.read_text(encoding="utf-8")
     css = '<style>.visual-suggestions{margin-top:18px;padding:16px;border:1px solid #888;border-radius:8px;background:#fafafa}.suggestion-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.suggestion-button{font-size:28px;padding:8px 14px;border:2px solid #777;border-radius:7px;background:white;cursor:pointer}.suggestion-button:hover{border-color:#111;background:#eee}.suggestion-status{font-weight:600}</style>'
