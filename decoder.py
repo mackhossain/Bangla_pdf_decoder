@@ -140,7 +140,7 @@ def main()->int:
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
         if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
         return 2 if any_unresolved else 0
-    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,profile=args.profile)
+    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile)
     except Exception as exc: print(f'DECODE FAILED: {exc}'); return 1
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
