@@ -1,7 +1,8 @@
-"""Dump unresolved PDF glyph outlines as standalone red SVG files."""
+"""Dump unresolved PDF glyphs and manually requested text using embedded PDF fonts."""
 from __future__ import annotations
 
 from html import escape
+from io import BytesIO
 from pathlib import Path
 
 from .direct_pdf_fixed import embedded_fonts
@@ -51,7 +52,7 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
     if not wanted:
         return 0
     written = 0
-    for _resource, base_font, raw in embedded_fonts(pdf, page):
+    for _resource, _base_font, raw in embedded_fonts(pdf, page):
         if not raw:
             continue
         import tempfile
@@ -70,3 +71,116 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
                 pass
         break
     return written
+
+
+def _shape_text(font_bytes: bytes, text: str):
+    """Shape Unicode text with the exact embedded PDF font using HarfBuzz."""
+    import uharfbuzz as hb
+    from fontTools.ttLib import TTFont
+
+    face = hb.Face(font_bytes)
+    font = hb.Font(face)
+    with TTFont(BytesIO(font_bytes), lazy=False) as ttfont:
+        upm = int(ttfont['head'].unitsPerEm)
+    font.scale = (upm, upm)
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.direction = 'ltr'
+    buf.script = 'beng'
+    buf.language = 'bn'
+    hb.shape(font, buf)
+    return buf.glyph_infos, buf.glyph_positions, upm
+
+
+def _text_svg(font_bytes: bytes, text: str) -> tuple[str, list[int]]:
+    """Render shaped Unicode text as deterministic SVG outlines."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.pens.svgPathPen import SVGPathPen
+    from fontTools.ttLib import TTFont
+
+    canvas = 256
+    pad = 16
+    infos, positions, upm = _shape_text(font_bytes, text)
+    gids = [int(info.codepoint) for info in infos]
+
+    with TTFont(BytesIO(font_bytes), lazy=False) as font:
+        order = font.getGlyphOrder()
+        glyph_set = font.getGlyphSet()
+        cursor_x = 0.0
+        cursor_y = 0.0
+        bounds = None
+        glyph_data = []
+        for info, pos in zip(infos, positions):
+            gid = int(info.codepoint)
+            if gid < 0 or gid >= len(order):
+                continue
+            name = order[gid]
+            x_offset = float(pos.x_offset)
+            y_offset = float(pos.y_offset)
+            pen = BoundsPen(glyph_set)
+            glyph_set[name].draw(pen)
+            if pen.bounds:
+                x0, y0, x1, y1 = pen.bounds
+                bx0 = x0 + cursor_x + x_offset
+                by0 = y0 + cursor_y + y_offset
+                bx1 = x1 + cursor_x + x_offset
+                by1 = y1 + cursor_y + y_offset
+                if bounds is None:
+                    bounds = (bx0, by0, bx1, by1)
+                else:
+                    bounds = (
+                        min(bounds[0], bx0), min(bounds[1], by0),
+                        max(bounds[2], bx1), max(bounds[3], by1),
+                    )
+            glyph_data.append((name, cursor_x + x_offset, cursor_y + y_offset))
+            cursor_x += float(pos.x_advance)
+            cursor_y += float(pos.y_advance)
+
+        if bounds is None:
+            raise ValueError(f'embedded PDF font cannot draw {text!r}')
+
+        min_x, min_y, max_x, max_y = bounds
+        width = max(max_x - min_x, 1.0)
+        height = max(max_y - min_y, 1.0)
+        scale = min((canvas - 2 * pad) / width, (canvas - 2 * pad) / height)
+        tx = (canvas - width * scale) / 2.0 - min_x * scale
+        ty = (canvas + height * scale) / 2.0 + min_y * scale
+
+        paths = []
+        for name, x, y in glyph_data:
+            pen = SVGPathPen(glyph_set)
+            glyph_set[name].draw(pen)
+            d = pen.getCommands()
+            paths.append(
+                f'<path d="{escape(d, quote=True)}" '
+                f'transform="translate({tx + x * scale:.6f},{ty + y * scale:.6f}) '
+                f'scale({scale:.8f},{-scale:.8f})" fill="#d11"/>'
+            )
+
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas}" height="{canvas}" '
+        f'viewBox="0 0 {canvas} {canvas}">'
+        f'<rect width="{canvas}" height="{canvas}" fill="#fff"/>'
+        f'{"".join(paths)}</svg>\n'
+    )
+    return svg, gids
+
+
+def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path) -> Path:
+    """Render manually supplied text with the PDF page's embedded font."""
+    if not text:
+        raise ValueError('genglyph text cannot be empty')
+    out_dir.mkdir(parents=True, exist_ok=True)
+    errors = []
+    for resource, base_font, raw in embedded_fonts(pdf, page):
+        if not raw:
+            continue
+        try:
+            svg, gids = _text_svg(raw, text)
+            path = out_dir / f'{text}.svg'
+            path.write_text(svg, encoding='utf-8', newline='\n')
+            return path
+        except Exception as exc:
+            errors.append(f'{resource.decode("latin1", errors="replace")}/{base_font}: {exc}')
+    detail = '; '.join(errors) if errors else 'no embedded FontFile2 resource found on the selected page'
+    raise ValueError(f'could not render {text!r} from the PDF embedded font: {detail}')
