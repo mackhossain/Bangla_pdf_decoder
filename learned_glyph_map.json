@@ -1490,6 +1490,58 @@
           "source": "user_confirmed"
         }
       }
+    },
+    "MDLVCA+Bangla:65314fcb66123104c6e09cc68df8aeb7c25f2db6b258c86627a3088bdc3a0417": {
+      "base_font": "MDLVCA+Bangla",
+      "glyphs": {
+        "259": {
+          "gid": 259,
+          "text": "ড্র",
+          "unicode": [
+            "U+09A1",
+            "U+09CD",
+            "U+09B0"
+          ],
+          "glyph_fingerprint": "glyph:f75b06a7c60821a29e4210efabaa18c260328264a80d6b311d6155979877afcd",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "248": {
+          "gid": 248,
+          "text": "জ্ঞ",
+          "unicode": [
+            "U+099C",
+            "U+09CD",
+            "U+099E"
+          ],
+          "glyph_fingerprint": "glyph:47c1dddb5b523709fb008db76083b462a02362fb8036cf99112ddf3775857ca6",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "213": {
+          "gid": 213,
+          "text": "ক্ন",
+          "unicode": [
+            "U+0995",
+            "U+09CD",
+            "U+09A8"
+          ],
+          "glyph_fingerprint": "glyph:e2e14491e7cd1954bb5caddbb40135240496074dab4ee27058709928100b28ec",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        },
+        "159": {
+          "gid": 159,
+          "text": "জ্",
+          "unicode": [
+            "U+099C",
+            "U+09CD"
+          ],
+          "glyph_fingerprint": "glyph:3d40a04b840f9abbd657787157154278ed3dc6b6b2239ab7605c694e60291a6b",
+          "confidence": 1.0,
+          "source": "user_confirmed"
+        }
+      }
     }
   }
 }
