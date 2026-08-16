@@ -165,7 +165,7 @@ def _find_exact_gid(raw: bytes, base_font: str, text: str, mapping_path: Path | 
     )
 
 
-def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = None, learned_path: Path | None = None) -> Path:
+def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = Path('custom_glyph_map.json'), learned_path: Path | None = Path('learned_glyph_map.json')) -> Path:
     """Dump the exact embedded PDF glyph mapped to text; do not run HarfBuzz."""
     if not text:
         raise ValueError('genglyph text cannot be empty')
