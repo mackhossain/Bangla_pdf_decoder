@@ -249,3 +249,9 @@ python -m pip install -r requirements.txt
 The runtime dependencies are intentionally limited to the packages used by the current decoder and shaping/TTF pipeline.
 
 
+\d+\.\s*নাম:.*?ঠিকানা:\s*.*
+r"[০-৯]+\.\s*নাম:[\s\S]*?ঠিকানা:.+?
+"gum
+
+r"[০-৯]+\.\s*নাম:[\s\S]*?ঠিকানা:.+?
+"gum

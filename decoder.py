@@ -9,7 +9,7 @@ from src.ec_pdf_decoder.bangla_order import restore_bangla_logical_order_tokens
 from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fonts,ttf_gid_map
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
-from src.ec_pdf_decoder.direct_review import run as review_run
+from src.ec_pdf_decoder.direct_review_v2 import run as review_run
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
@@ -47,9 +47,6 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,l
         glyphs=learned.get('fonts',{}).get(font_key(raw,base_font),{}).get('glyphs',{})
         for gid,entry in glyphs.items():
             if isinstance(entry,dict) and entry.get('confidence',0)>=1.0: section[str(gid)]=str(entry.get('text',''))
-        # The old implementation opened the same TTF once per GID. For a 200+ glyph
-        # font that meant hundreds of TTFont parses on every page. Cache the complete
-        # fingerprint map by the exact embedded-font bytes instead.
         for gid,gkey in _cached_fingerprint_map(font_key(raw,base_font),raw).items():
             key=str(gid)
             if key in section: continue
@@ -90,7 +87,7 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
     try:
         t=time.perf_counter(); report=analyze_page_direct(pdf_path,page,materialized); timings['page_analysis']=time.perf_counter()-t
         if review and report['missing_cids']:
-            t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
+            t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts_comprehensive_validated.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
             _clear_learned_cache(); learned_db=_load_learned_database(learned_path)
             try: materialized.unlink(missing_ok=True)
             except PermissionError: pass
@@ -143,7 +140,7 @@ def main()->int:
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
         if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
         return 2 if any_unresolved else 0
-    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,profile=args.profile)
+    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile)
     except Exception as exc: print(f'DECODE FAILED: {exc}'); return 1
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
