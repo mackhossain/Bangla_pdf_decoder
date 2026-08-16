@@ -10,6 +10,7 @@ from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fon
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
 from src.ec_pdf_decoder.direct_review_v2 import run as review_run
+from src.ec_pdf_decoder.glyph_dump import dump_gids
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
@@ -75,7 +76,7 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
         chunks.append(selected)
     return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
 
-def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False,learned_db=None,profile:bool=False):
+def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False,learned_db=None,profile:bool=False,dump:bool=False):
     """Decode one PDF page. Set profile=True to print stage timings; decoding behavior is unchanged."""
     pdf_path=Path(pdf_path); mapping_path=Path(mapping_path); learned_path=Path(learned_path); corrections_path=Path(corrections_path)
     timings={}; t0=time.perf_counter()
@@ -86,6 +87,9 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
     report={'missing_cids':[]}
     try:
         t=time.perf_counter(); report=analyze_page_direct(pdf_path,page,materialized); timings['page_analysis']=time.perf_counter()-t
+        if dump and report.get('missing_cids'):
+            dumped=dump_gids(pdf,page,list(report['missing_cids']),Path('svgs'))
+            print(f'DUMP: saved {dumped} red glyph SVG(s) to {Path("svgs").resolve()}',flush=True)
         if review and report['missing_cids']:
             t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts_comprehensive_validated.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
             _clear_learned_cache(); learned_db=_load_learned_database(learned_path)
@@ -109,7 +113,8 @@ def main()->int:
     parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text')
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False); parser.add_argument('--all-pages',action='store_true',help='decode every PDF page sequentially')
     parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json'))
-    parser.add_argument('--review',action='store_true'); parser.add_argument('--profile',action='store_true',help='print timing for each decoder stage; does not change decoding'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); parser.add_argument('--generate-ttf',action='store_true',help='generate a Unicode TTF from confirmed learned glyph mappings; no PDF/page required')
+    parser.add_argument('--review',action='store_true'); parser.add_argument('--dump',action='store_true',help='dump each unresolved red glyph as an SVG named by CID into ./svgs')
+    parser.add_argument('--profile',action='store_true',help='print timing for each decoder stage; does not change decoding'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); parser.add_argument('--generate-ttf',action='store_true',help='generate a Unicode TTF from confirmed learned glyph mappings; no PDF/page required')
     args=parser.parse_args()
     if args.generate_ttf:
         try: output,stats=generate_unicode_ttf()
@@ -128,7 +133,7 @@ def main()->int:
         for page in range(1,page_count+1):
             print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
             try:
-                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile)
+                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile,dump=args.dump)
                 all_text.append(text)
                 if args.review: learned_db=_load_learned_database(args.learned)
                 missing=report.get('missing_cids',[]); any_unresolved |= bool(missing)
@@ -140,7 +145,7 @@ def main()->int:
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
         if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
         return 2 if any_unresolved else 0
-    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile)
+    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile,dump=args.dump)
     except Exception as exc: print(f'DECODE FAILED: {exc}'); return 1
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
