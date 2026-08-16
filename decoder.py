@@ -10,7 +10,7 @@ from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fon
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
 from src.ec_pdf_decoder.direct_review_v2 import run as review_run
-from src.ec_pdf_decoder.glyph_dump import dump_gids
+from src.ec_pdf_decoder.glyph_dump import dump_gids,dump_text_glyph
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
@@ -114,6 +114,7 @@ def main()->int:
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False); parser.add_argument('--all-pages',action='store_true',help='decode every PDF page sequentially')
     parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json'))
     parser.add_argument('--review',action='store_true'); parser.add_argument('--dump',action='store_true',help='dump each unresolved red glyph as an SVG named by CID into ./svgs')
+    parser.add_argument('--genglyph',help='render the supplied Bangla text with the PDF page embedded font into ./svgs/<text>.svg')
     parser.add_argument('--profile',action='store_true',help='print timing for each decoder stage; does not change decoding'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); parser.add_argument('--generate-ttf',action='store_true',help='generate a Unicode TTF from confirmed learned glyph mappings; no PDF/page required')
     args=parser.parse_args()
     if args.generate_ttf:
@@ -121,6 +122,18 @@ def main()->int:
         except Exception as exc: print(f'TTF GENERATION FAILED: {exc}'); return 1
         print('GENERATING UNICODE TTF'); print('======================'); print(f'Source glyph mappings : {stats["source_glyph_mappings"]}'); print(f'Single Unicode maps   : {stats["single_unicode_mappings"]}'); print(f'OpenType ligatures    : {stats["ligature_mappings"]}'); print(f'TTF: {output}'); return 0
     if args.pdf is None: parser.error('the following arguments are required: pdf (unless --generate-ttf is used)')
+    if args.genglyph is not None:
+        if args.all_pages: parser.error('--genglyph cannot be combined with --all-pages')
+        page=args.page or 1
+        try:
+            pdf=read_pdf_bytes(args.pdf)
+            output=dump_text_glyph(pdf,page,args.genglyph,Path('svgs'))
+        except Exception as exc:
+            print(f'GLYPH GENERATION FAILED: {exc}'); return 1
+        print(f'GLYPH: {args.genglyph}')
+        print(f'PAGE: {page}')
+        print(f'SVG: {output.resolve()}')
+        return 0
     if args.all_pages and args.page is not None: parser.error('--page and --all-pages cannot be used together')
     if not args.all_pages and args.page is None: parser.error('--page is required unless --all-pages or --generate-ttf is used')
     if args.all_pages:
