@@ -5,7 +5,7 @@ import json
 from html import escape
 from pathlib import Path
 
-from .direct_pdf_fixed import embedded_fonts
+from .direct_pdf_fixed import embedded_fonts, ttf_gid_map, used_gids
 from .learned_mapping import font_key, load_database
 
 
@@ -165,7 +165,25 @@ def _harfbuzz_single_gid(raw: bytes, text: str) -> int | None:
     return int(shaped[0])
 
 
-def _find_exact_gid(raw: bytes, base_font: str, text: str, mapping_path: Path | None, learned_path: Path | None) -> tuple[int, str]:
+def _single_unresolved_pdf_gid(pdf: bytes, page: int, raw: bytes) -> int | None:
+    """Return the one unresolved GID used by the PDF page, when unambiguous.
+
+    This is the important fallback for a manual ``--genglyph`` request: the
+    user is naming the red/missing glyph they are looking at. If that page has
+    exactly one unresolved CID/GID, its embedded outline is the authoritative
+    glyph. The supplied Unicode text is then used only as the output filename;
+    we do not pretend the font's cmap/GSUB can identify the PDF glyph.
+    """
+    try:
+        mapping = ttf_gid_map(raw)
+        gids = sorted(set(int(g) for g in used_gids(pdf, page)))
+        unresolved = [gid for gid in gids if gid >= 120 and gid not in mapping]
+        return unresolved[0] if len(unresolved) == 1 else None
+    except Exception:
+        return None
+
+
+def _find_exact_gid(pdf: bytes, page: int, raw: bytes, base_font: str, text: str, mapping_path: Path | None, learned_path: Path | None) -> tuple[int, str]:
     """Resolve text to one exact embedded-font GID; never synthesize a shaped sequence."""
     gid = _learned_text_gid(learned_path, raw, base_font, text)
     if gid is not None:
@@ -179,14 +197,18 @@ def _find_exact_gid(raw: bytes, base_font: str, text: str, mapping_path: Path | 
     gid = _harfbuzz_single_gid(raw, text)
     if gid is not None:
         return gid, "embedded font OpenType shaping (single GID)"
+    gid = _single_unresolved_pdf_gid(pdf, page, raw)
+    if gid is not None:
+        return gid, "single unresolved PDF GID on selected page"
     raise ValueError(
         f"no exact single embedded-font GID is known for {text!r}; "
-        "the embedded font either has no direct mapping or shapes this text into multiple GIDs"
+        "the embedded font either has no direct mapping, shapes this text into multiple GIDs, "
+        "or the page contains multiple unresolved PDF glyphs"
     )
 
 
 def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = Path('custom_glyph_map.json'), learned_path: Path | None = Path('learned_glyph_map.json')) -> Path:
-    """Dump the exact embedded PDF glyph mapped to text; do not synthesize multiple glyphs."""
+    """Dump the authoritative embedded PDF glyph for a manual Unicode label."""
     if not text:
         raise ValueError('genglyph text cannot be empty')
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -195,7 +217,7 @@ def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_
         if not raw:
             continue
         try:
-            gid, source = _find_exact_gid(raw, base_font, text, mapping_path, learned_path)
+            gid, source = _find_exact_gid(pdf, page, raw, base_font, text, mapping_path, learned_path)
             import tempfile
             with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
                 tmp.write(raw)
