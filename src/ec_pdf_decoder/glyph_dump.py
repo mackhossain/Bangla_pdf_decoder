@@ -148,6 +148,23 @@ def _font_exact_text_gid(raw: bytes, text: str) -> int | None:
     return _unique_gids(gids, text)
 
 
+def _harfbuzz_single_gid(raw: bytes, text: str) -> int | None:
+    """Resolve logical Bangla text through the embedded font's own GSUB shaping.
+
+    This is only accepted when HarfBuzz produces exactly one GID. If it produces
+    multiple glyphs, we refuse to guess because that would be a synthesized
+    sequence rather than a single PDF glyph.
+    """
+    try:
+        from .bangla_harfbuzz import shape_gids
+        shaped = shape_gids(raw, text)
+    except Exception:
+        return None
+    if shaped is None or len(shaped) != 1:
+        return None
+    return int(shaped[0])
+
+
 def _find_exact_gid(raw: bytes, base_font: str, text: str, mapping_path: Path | None, learned_path: Path | None) -> tuple[int, str]:
     """Resolve text to one exact embedded-font GID; never synthesize a shaped sequence."""
     gid = _learned_text_gid(learned_path, raw, base_font, text)
@@ -159,14 +176,17 @@ def _find_exact_gid(raw: bytes, base_font: str, text: str, mapping_path: Path | 
     gid = _font_exact_text_gid(raw, text)
     if gid is not None:
         return gid, "embedded font cmap/glyph name"
+    gid = _harfbuzz_single_gid(raw, text)
+    if gid is not None:
+        return gid, "embedded font OpenType shaping (single GID)"
     raise ValueError(
         f"no exact single embedded-font GID is known for {text!r}; "
-        "--genglyph refuses to shape it into separate glyphs because that would not be the PDF glyph"
+        "the embedded font either has no direct mapping or shapes this text into multiple GIDs"
     )
 
 
 def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = Path('custom_glyph_map.json'), learned_path: Path | None = Path('learned_glyph_map.json')) -> Path:
-    """Dump the exact embedded PDF glyph mapped to text; do not run HarfBuzz."""
+    """Dump the exact embedded PDF glyph mapped to text; do not synthesize multiple glyphs."""
     if not text:
         raise ValueError('genglyph text cannot be empty')
     out_dir.mkdir(parents=True, exist_ok=True)
