@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -22,75 +23,137 @@ def _candidate_status(text: str, candidate_path: Path = Path("data/bangla_conjun
     return "candidate database: NO"
 
 
-def _render_font_sequence(raw: bytes, gids: list[int], positions: list[tuple[int, int, int, int]] | None = None) -> tuple[bytes, tuple[int, int]]:
-    """Render a glyph sequence from one TTF into a grayscale PNG-like bitmap.
+def _write_temp_font(raw: bytes) -> Path:
+    fd, name = tempfile.mkstemp(suffix=".ttf")
+    os.close(fd)
+    path = Path(name)
+    path.write_bytes(raw)
+    return path
 
-    Returns PNG bytes plus (width, height). Uses Pillow/FontTools only for the
-    diagnostic. The actual PDF glyphs remain the source of truth.
+
+def _render_font_sequence(raw: bytes, gids: list[int]) -> tuple[bytes, tuple[int, int]]:
+    """Render a glyph sequence from one TTF into a grayscale PNG bitmap.
+
+    This diagnostic rasterizer intentionally uses only the font outline geometry;
+    it does not modify the PDF, mappings, or SVG output. Temporary font files are
+    explicitly closed before deletion so the code works on Windows too.
     """
     from fontTools.pens.basePen import BasePen
     from fontTools.ttLib import TTFont
     from PIL import Image, ImageDraw
 
-    # This is a deliberately simple outline rasterizer for comparison. If the
-    # environment lacks Pillow, the caller will report that limitation.
-    fd, name = tempfile.mkstemp(suffix=".ttf")
-    Path(name).write_bytes(raw)
+    font_path = _write_temp_font(raw)
+    font = None
+    image = Image.new("L", (512, 256), 255)
     try:
-        font = TTFont(name, lazy=False)
-        try:
-            upem = int(font["head"].unitsPerEm)
-            glyph_set = font.getGlyphSet()
-            order = font.getGlyphOrder()
-            scale = 1.0
-            margin = 16
-            canvas_w = 512
-            canvas_h = 256
-            image = Image.new("L", (canvas_w, canvas_h), 255)
+        font = TTFont(str(font_path), lazy=False)
+        glyph_set = font.getGlyphSet()
+        order = font.getGlyphOrder()
+        draw = ImageDraw.Draw(image)
 
-            class Pen(BasePen):
-                def __init__(self, glyphSet, draw, ox, oy, scale):
+        # Scale the whole sequence from its actual glyph bounds into a stable
+        # comparison canvas. This avoids treating different whitespace/advance
+        # widths as shape differences.
+        outlines = []
+        for gid in gids:
+            if gid < 0 or gid >= len(order):
+                continue
+            name = order[gid]
+            glyph = glyph_set[name]
+            points = []
+
+            class CollectPen(BasePen):
+                def __init__(self, glyphSet):
                     super().__init__(glyphSet)
-                    self.draw = draw; self.ox = ox; self.oy = oy; self.scale = scale
-                def _p(self, pt):
-                    x, y = pt
-                    return (self.ox + x * self.scale, self.oy - y * self.scale)
-                def _moveTo(self, pt): self.cur = self._p(pt)
-                def _lineTo(self, pt):
-                    q = self._p(pt); self.draw.line([self.cur, q], fill=0, width=2); self.cur=q
-                def _curveToOne(self, p1, p2, p3):
-                    q3=self._p(p3); self.draw.line([self.cur, q3], fill=0, width=2); self.cur=q3
-                def _qCurveToOne(self, p1, p2):
-                    q=self._p(p2); self.draw.line([self.cur, q], fill=0, width=2); self.cur=q
+                def _moveTo(self, pt): points.append(pt)
+                def _lineTo(self, pt): points.append(pt)
+                def _curveToOne(self, p1, p2, p3): points.extend((p1, p2, p3))
+                def _qCurveToOne(self, p1, p2): points.extend((p1, p2))
                 def _closePath(self): pass
                 def _endPath(self): pass
 
-            x_cursor = margin
-            baseline = 190
-            for gid in gids:
-                if gid < 0 or gid >= len(order):
-                    continue
-                gname = order[gid]
-                glyph = glyph_set[gname]
-                pen = Pen(glyph_set, ImageDraw.Draw(image), x_cursor, baseline, scale)
-                glyph.draw(pen)
-                try:
-                    aw = int(font["hmtx"].metrics[gname][0])
-                except Exception:
-                    aw = 500
-                x_cursor += max(aw, 200) * scale
-                if x_cursor > canvas_w - margin:
-                    break
+            glyph.draw(CollectPen(glyph_set))
+            outlines.append((gid, glyph, points))
+
+        if not outlines:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as out:
                 png_path = Path(out.name)
+            try:
+                image.save(png_path, format="PNG")
+                return png_path.read_bytes(), image.size
+            finally:
+                png_path.unlink(missing_ok=True)
+
+        xs=[]; ys=[]
+        for _gid, _glyph, pts in outlines:
+            for x,y in pts:
+                xs.append(float(x)); ys.append(float(y))
+        if not xs or not ys:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as out:
+                png_path = Path(out.name)
+            try:
+                image.save(png_path, format="PNG")
+                return png_path.read_bytes(), image.size
+            finally:
+                png_path.unlink(missing_ok=True)
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        width = max(max_x - min_x, 1.0)
+        height = max(max_y - min_y, 1.0)
+        scale = min(220.0 / width, 220.0 / height)
+        ox = 256.0 - ((min_x + max_x) * scale / 2.0)
+        oy = 192.0 + ((min_y + max_y) * scale / 2.0)
+
+        class RasterPen(BasePen):
+            def __init__(self, glyphSet):
+                super().__init__(glyphSet)
+                self.cur = None
+            def _p(self, pt):
+                x,y = pt
+                return (ox + x*scale, oy - y*scale)
+            def _moveTo(self, pt): self.cur = self._p(pt)
+            def _lineTo(self, pt):
+                q=self._p(pt)
+                draw.line([self.cur,q],fill=0,width=max(1,int(scale/20)))
+                self.cur=q
+            def _curveToOne(self, p1, p2, p3):
+                # Dense polyline approximation sufficient for diagnostics.
+                start=self.cur
+                q3=self._p(p3)
+                draw.line([start,q3],fill=0,width=max(1,int(scale/20)))
+                self.cur=q3
+            def _qCurveToOne(self, p1, p2):
+                start=self.cur
+                q=self._p(p2)
+                draw.line([start,q],fill=0,width=max(1,int(scale/20)))
+                self.cur=q
+            def _closePath(self):
+                self.cur=None
+            def _endPath(self):
+                self.cur=None
+
+        for _gid, glyph, _pts in outlines:
+            glyph.draw(RasterPen(glyph_set))
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as out:
+            png_path = Path(out.name)
+        try:
             image.save(png_path, format="PNG")
-            png = png_path.read_bytes()
-            png_path.unlink(missing_ok=True)
-            return png, image.size
+            return png_path.read_bytes(), image.size
         finally:
-            font.close()
+            png_path.unlink(missing_ok=True)
     finally:
-        Path(name).unlink(missing_ok=True)
+        # Explicitly release all FontTools objects before deleting the temp file.
+        if font is not None:
+            font.close()
+        font = None
+        try:
+            font_path.unlink(missing_ok=True)
+        except PermissionError:
+            # Windows can hold the file briefly through a fontTools table object;
+            # leave the temp file rather than failing the entire diagnostic.
+            pass
 
 
 def _png_similarity(a: bytes, b: bytes) -> float:
@@ -137,8 +200,6 @@ def debug_genglyph(pdf: bytes, page: int, text: str) -> None:
             for gid in shaped:
                 print(f"  SHAPED TTF GID {gid}")
 
-        # Compare the candidate's rendered shaped sequence against each
-        # unresolved PDF glyph as a single-glyph image. This is diagnostic only.
         if shaped and unresolved:
             try:
                 candidate_png, _ = _render_font_sequence(raw, [int(g) for g in shaped])
