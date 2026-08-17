@@ -10,27 +10,20 @@ from src.ec_pdf_decoder.direct_pdf_fixed import analyze_page_direct,embedded_fon
 from src.ec_pdf_decoder.direct_pdf import read_pdf_bytes
 from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,build_fingerprint_index,load_database
 from src.ec_pdf_decoder.direct_review_v2 import run as review_run
-from src.ec_pdf_decoder.debug_genglyph import debug_genglyph
 from src.ec_pdf_decoder.glyph_dump import dump_gids,dump_text_glyph
+from src.ec_pdf_decoder.debug_genglyph import debug_genglyph
 from src.ec_pdf_decoder.exact_genglyph import match_reference
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
-def _cached_learned_database(path_str:str,mtime_ns:int,size:int):
-    return load_database(Path(path_str))
-
+def _cached_learned_database(path_str:str,mtime_ns:int,size:int): return load_database(Path(path_str))
 def _load_learned_database(path:Path):
     try: stat=path.stat()
     except FileNotFoundError: return load_database(path)
     return _cached_learned_database(str(path.resolve()),stat.st_mtime_ns,stat.st_size)
-
 def _clear_learned_cache(): _cached_learned_database.cache_clear()
-
 @lru_cache(maxsize=8)
-def _cached_fingerprint_map(font_id:str,raw:bytes):
-    """Compute a font's glyph fingerprints once per embedded-font byte identity."""
-    return glyph_fingerprint_map(raw)
-
+def _cached_fingerprint_map(font_id:str,raw:bytes): return glyph_fingerprint_map(raw)
 def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
     cache_dir=Path('data/embedded_fonts'); cache_dir.mkdir(parents=True,exist_ok=True)
     existing=sorted(cache_dir.glob('*.ttf'))
@@ -39,7 +32,6 @@ def _cache_embedded_ttf(pdf:bytes,page:int)->Path|None:
         if raw:
             safe=''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in base_font) or 'Bangla'; out=cache_dir/f'{safe}.ttf'; out.write_bytes(raw); return out
     return None
-
 def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,learned=None)->Path:
     base=json.loads(legacy_path.read_text(encoding='utf-8')) if legacy_path.exists() else {}
     learned=learned if learned is not None else _load_learned_database(learned_path)
@@ -56,7 +48,6 @@ def _materialize_mapping(pdf:bytes,page:int,legacy_path:Path,learned_path:Path,l
             match=fingerprint_index.get(gkey)
             if match is not None: section[key]=str(match.get('text',''))
     fd,name=tempfile.mkstemp(prefix='ec_mapping_',suffix='.json'); os.close(fd); path=Path(name); path.write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8'); return path
-
 def _flat_mapping(mapping_path:Path)->dict[str,str]:
     try: data=json.loads(mapping_path.read_text(encoding='utf-8'))
     except (OSError,json.JSONDecodeError): return {}
@@ -68,7 +59,6 @@ def _flat_mapping(mapping_path:Path)->dict[str,str]:
             if isinstance(value,str): flat[str(key)]=value
             elif isinstance(value,dict) and isinstance(value.get('text'),str): flat[str(key)]=value['text']
     return flat
-
 def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corrections_path:Path|None=None)->str:
     mapping=_flat_mapping(mapping_path); chunks=[]
     for operation in report.get('operations',[]):
@@ -77,12 +67,9 @@ def _logical_text(report:dict,mapping_path:Path,font_bytes:bytes|None=None,corre
         else: selected,_score=choose_candidate(font_bytes,cids,original,reordered)
         chunks.append(selected)
     return cleanup_bangla_text(__import__('unicodedata').normalize('NFC','\n'.join(chunks)),corrections_path)
-
 def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,return_report:bool=False,learned_db=None,profile:bool=False,dump:bool=False):
-    """Decode one PDF page. Set profile=True to print stage timings; decoding behavior is unchanged."""
     pdf_path=Path(pdf_path); mapping_path=Path(mapping_path); learned_path=Path(learned_path); corrections_path=Path(corrections_path)
-    timings={}; t0=time.perf_counter()
-    learned_db=learned_db if learned_db is not None else _load_learned_database(learned_path); timings['learned_map_load']=time.perf_counter()-t0
+    timings={}; t0=time.perf_counter(); learned_db=learned_db if learned_db is not None else _load_learned_database(learned_path); timings['learned_map_load']=time.perf_counter()-t0
     t=time.perf_counter(); pdf=read_pdf_bytes(pdf_path); timings['pdf_read']=time.perf_counter()-t
     t=time.perf_counter(); _cache_embedded_ttf(pdf,page); timings['font_cache']=time.perf_counter()-t
     t=time.perf_counter(); materialized=_materialize_mapping(pdf,page,mapping_path,learned_path,learned_db); timings['mapping_materialize']=time.perf_counter()-t
@@ -90,8 +77,7 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
     try:
         t=time.perf_counter(); report=analyze_page_direct(pdf_path,page,materialized); timings['page_analysis']=time.perf_counter()-t
         if dump and report.get('missing_cids'):
-            dumped=dump_gids(pdf,page,list(report['missing_cids']),Path('svgs'))
-            print(f'DUMP: saved {dumped} red glyph SVG(s) to {Path("svgs").resolve()}',flush=True)
+            dumped=dump_gids(pdf,page,list(report['missing_cids']),Path('svgs')); print(f'DUMP: saved {dumped} red glyph SVG(s) to {Path("svgs").resolve()}',flush=True)
         if review and report['missing_cids']:
             t=time.perf_counter(); review_run(pdf_path,page,learned_path,Path('data/bangla_conjuncts_comprehensive_validated.json'),gid,list(report['missing_cids']),report.get('operations',[])); timings['manual_review']=time.perf_counter()-t
             _clear_learned_cache(); learned_db=_load_learned_database(learned_path)
@@ -100,8 +86,7 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
             t=time.perf_counter(); materialized=_materialize_mapping(pdf,page,mapping_path,learned_path,learned_db); timings['mapping_rematerialize']=time.perf_counter()-t
             t=time.perf_counter(); report=analyze_page_direct(pdf_path,page,materialized); timings['page_reanalysis']=time.perf_counter()-t
         t=time.perf_counter(); font_bytes=next((raw for _resource,_base,raw in embedded_fonts(pdf,page)),None); timings['font_bytes_lookup']=time.perf_counter()-t
-        t=time.perf_counter(); text=_logical_text(report,materialized,font_bytes,corrections_path); timings['text_processing']=time.perf_counter()-t
-        timings['total']=sum(timings.values())
+        t=time.perf_counter(); text=_logical_text(report,materialized,font_bytes,corrections_path); timings['text_processing']=time.perf_counter()-t; timings['total']=sum(timings.values())
         if profile:
             print('PROFILE — PAGE',page); print('─'*42)
             for name,value in timings.items(): print(f'{name.replace("_"," ").title():24s} {value:7.3f} s')
@@ -110,33 +95,27 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
     finally:
         try: materialized.unlink(missing_ok=True)
         except PermissionError: pass
-
-def decode_pdf_all(pdf_path:str|Path,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,learned_db=None,profile:bool=False,dump:bool=False):
-    """Decode every PDF page and return one formatted string with page delimiters."""
+def decode_pdf_all(pdf_path:str|Path,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,learned_db=None,profile:bool=False,dump:bool=False)->str:
+    """Decode every PDF page and return page-delimited text with no progress logging."""
     from pypdf import PdfReader
-    pdf_path=Path(pdf_path)
-    page_count=len(PdfReader(str(pdf_path)).pages)
+    pdf_path=Path(pdf_path); page_count=len(PdfReader(str(pdf_path)).pages)
     shared_learned=_load_learned_database(Path(learned_path)) if learned_db is None else learned_db
     chunks=[]
     for page in range(1,page_count+1):
-        print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
         try:
             text,report=decode_pdf(pdf_path,page,review,mapping_path=mapping_path,learned_path=learned_path,corrections_path=corrections_path,gid=gid,return_report=True,learned_db=shared_learned,profile=profile,dump=dump)
             if review:
                 _clear_learned_cache(); shared_learned=_load_learned_database(Path(learned_path))
         except Exception as exc:
             text=f'[PAGE {page} FAILED: {exc}]'
-            print(text,flush=True)
         chunks.append(f'<<<page:{page}>>>\n{text}\n<<<END>>>')
     return '\n'.join(chunks)
-
 def main()->int:
     parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text')
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False); parser.add_argument('--all-pages',action='store_true',help='decode every PDF page sequentially')
     parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json'))
     parser.add_argument('--review',action='store_true'); parser.add_argument('--dump',action='store_true',help='dump each unresolved red glyph as an SVG named by CID into ./svgs')
-    parser.add_argument('--genglyph',help='match supplied Bangla text against PDF-derived reference glyphs and dump the exact 100% matching unresolved CID')
-    parser.add_argument('--debug-genglyph',help='print evidence from the PDF font/content stream for the supplied Bangla text; does not modify files')
+    parser.add_argument('--genglyph',help='match supplied Bangla text against PDF-derived reference glyphs and dump the exact 100% matching unresolved CID'); parser.add_argument('--debug-genglyph',help='print evidence from the PDF font/content stream for the supplied Bangla text; does not modify files')
     parser.add_argument('--profile',action='store_true',help='print timing for each decoder stage; does not change decoding'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); parser.add_argument('--generate-ttf',action='store_true',help='generate a Unicode TTF from confirmed learned glyph mappings; no PDF/page required')
     args=parser.parse_args()
     if args.generate_ttf:
@@ -149,28 +128,21 @@ def main()->int:
     if args.debug_genglyph is not None:
         if args.all_pages: parser.error('--debug-genglyph cannot be combined with --all-pages')
         page=args.page or 1
-        try:
-            pdf=read_pdf_bytes(args.pdf)
-            debug_genglyph(pdf,page,args.debug_genglyph)
-        except Exception as exc:
-            print(f'DEBUG GENGLYPH FAILED: {exc}'); return 1
+        try: pdf=read_pdf_bytes(args.pdf); debug_genglyph(pdf,page,args.debug_genglyph)
+        except Exception as exc: print(f'DEBUG GENGLYPH FAILED: {exc}'); return 1
         return 0
     if args.genglyph is not None:
         if args.all_pages: parser.error('--genglyph cannot be combined with --all-pages')
         page=args.page or 1
-        try:
-            pdf=read_pdf_bytes(args.pdf)
-            output=match_reference(pdf,page,args.genglyph,Path('svgs'))
+        try: pdf=read_pdf_bytes(args.pdf); output=match_reference(pdf,page,args.genglyph,Path('svgs'))
         except Exception as exc: print(f'GLYPH GENERATION FAILED: {exc}'); return 1
         print(f'GLYPH: {args.genglyph}'); print(f'PAGE: {page}'); print(f'SVG: {output.resolve()}'); return 0
     if args.all_pages:
-        try:
-            combined=decode_pdf_all(args.pdf,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,profile=args.profile,dump=args.dump)
-        except Exception as exc:
-            print(f'DECODE FAILED: {exc}'); return 1
+        try: combined=decode_pdf_all(args.pdf,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,profile=args.profile,dump=args.dump)
+        except Exception as exc: print(f'DECODE FAILED: {exc}'); return 1
         print(combined)
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
-        if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name},ensure_ascii=False,indent=2),encoding='utf-8')
+        if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':combined.count('<<<page:')},ensure_ascii=False,indent=2),encoding='utf-8')
         return 0
     if args.page is None: parser.error('--page is required unless --all-pages or --generate-ttf is used')
     try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=None,profile=args.profile,dump=args.dump)
@@ -179,5 +151,4 @@ def main()->int:
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
     if args.json_path: args.json_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     return 0 if not report['missing_cids'] else 2
-
 if __name__=='__main__': raise SystemExit(main())
