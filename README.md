@@ -93,7 +93,54 @@ text = decoder.decode_pdf(
 print(text)
 ```
 
-`review=True` is the Python equivalent of:
+Decode every page from Python:
+
+```python
+import decoder
+
+text = decoder.decode_pdf_all(
+    "filename.pdf",
+)
+
+print(text)
+```
+
+Decode every page from Python with the existing manual-review workflow enabled:
+
+```python
+import decoder
+
+text = decoder.decode_pdf_all(
+    "filename.pdf",
+    review=True,
+)
+
+print(text)
+```
+
+`decode_pdf_all()` processes pages sequentially and returns one string with explicit page delimiters:
+
+```text
+<<<page:1>>>
+
+contents......
+
+<<<END>>>
+<<<page:2>>>
+
+contents......
+
+<<<END>>>
+<<<page:3>>>
+
+contents......
+
+<<<END>>>
+```
+
+If `review=True`, the existing interactive reviewer is used page-by-page. Newly confirmed mappings are reloaded before the next page is processed.
+
+`review=True` on `decode_pdf()` remains the Python equivalent of:
 
 ```cmd
 python decoder.py filename.pdf --page 13 --review
@@ -170,6 +217,8 @@ The optional `--text OUTPUT.txt` flag can be combined with `--all-pages` to save
 ```cmd
 python decoder.py FILE.pdf --all-pages --review --text all_pages.txt
 ```
+
+The same page-delimited format is used by `decode_pdf_all()` when called from Python.
 
 For profiling all-pages processing, `--profile` can be added:
 
