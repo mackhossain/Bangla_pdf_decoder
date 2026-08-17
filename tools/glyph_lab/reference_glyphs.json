@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "Known exact PDF glyph references. The source PDF embedded glyph is the visual ground truth.",
+  "glyphs": {
+    "শ্চ": {
+      "pdf_cid_gid": 340,
+      "source": "261749_com_3375_male_without_photo_190_2025-11-24.pdf",
+      "page": 1,
+      "notes": "Confirmed manually from the EC Manual Glyph Review target. Generate the exact reference artwork from the supplied PDF with --genglyph-ref."
+    }
+  }
+}
