@@ -1,13 +1,14 @@
-"""Dump unresolved PDF glyphs and generate standalone reference glyph artwork."""
+"""Dump PDF glyphs and use locally curated exact reference SVGs for --genglyph."""
 from __future__ import annotations
 
 import io
 import json
+import shutil
+import tempfile
 from html import escape
 from pathlib import Path
 
 from .direct_pdf_fixed import embedded_fonts
-from .learned_mapping import font_key, glyph_fingerprint_map, glyph_key, load_database
 
 
 def _single_gid_svg(font_path: Path, gid: int) -> str:
@@ -56,7 +57,6 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
     for _resource, _base_font, raw in embedded_fonts(pdf, page):
         if not raw:
             continue
-        import tempfile
         font_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as tmp:
@@ -64,7 +64,9 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
                 font_path = Path(tmp.name)
             count = 0
             for gid in wanted:
-                (out_dir / f"{gid}.svg").write_text(_single_gid_svg(font_path, gid), encoding="utf-8", newline="\n")
+                (out_dir / f"{gid}.svg").write_text(
+                    _single_gid_svg(font_path, gid), encoding="utf-8", newline="\n"
+                )
                 count += 1
             return count
         finally:
@@ -74,6 +76,29 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
                 except OSError:
                     pass
     return 0
+
+
+def _reference_candidates(text: str) -> list[Path]:
+    """Find a user-created exact reference SVG for the requested text."""
+    return [
+        Path("tools/glyph_lab/references") / f"{text}.svg",
+        Path("tools/glyph_lab/glyph_lab/references") / f"{text}.svg",
+        Path("experiment/glyph-lab/references") / f"{text}.svg",
+        Path("references") / f"{text}.svg",
+    ]
+
+
+def _copy_exact_reference(text: str, out_dir: Path) -> Path | None:
+    """Use an existing PDF-derived reference SVG verbatim when present."""
+    for src in _reference_candidates(text):
+        if src.exists() and src.is_file():
+            out_dir.mkdir(parents=True, exist_ok=True)
+            dst = out_dir / f"{text}.svg"
+            shutil.copyfile(src, dst)
+            print(f"GENGLYPH REFERENCE: using exact curated PDF SVG {src}")
+            print(f"SVG: {dst.resolve()}")
+            return dst
+    return None
 
 
 def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
@@ -89,11 +114,10 @@ def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
     out: list[Path] = []
     seen: set[str] = set()
     for path in paths:
-        try:
-            key = str(path.resolve())
-        except OSError:
-            key = str(path)
-        if key in seen or not path.exists():
+        if not path.exists():
+            continue
+        key = str(path.resolve())
+        if key in seen:
             continue
         seen.add(key)
         out.append(path)
@@ -101,7 +125,7 @@ def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
 
 
 def _shape_with_positions(font_bytes: bytes, text: str):
-    """Return HarfBuzz GIDs and exact glyph offsets/advances."""
+    """Return HarfBuzz GIDs, positions and UPM."""
     import uharfbuzz as hb
     from fontTools.ttLib import TTFont
 
@@ -117,79 +141,115 @@ def _shape_with_positions(font_bytes: bytes, text: str):
     buf.language = "bn"
     hb.shape(hb_font, buf)
     gids = [int(i.codepoint) for i in buf.glyph_infos]
-    pos = [(int(p.x_offset), int(p.y_offset), int(p.x_advance), int(p.y_advance)) for p in buf.glyph_positions]
+    pos = [
+        (int(p.x_offset), int(p.y_offset), int(p.x_advance), int(p.y_advance))
+        for p in buf.glyph_positions
+    ]
     return gids, pos, upm
 
 
-def _reference_text_svg(reference_font: Path, text: str, pixel_size: int = 512) -> tuple[str, list[int]]:
-    """Render full-font shaped text to a tight SVG using actual HarfBuzz positions."""
+def generate_reference_glyph(text: str, out_dir: Path, reference_font: Path | None = None) -> Path:
+    """Generate a standalone reference SVG only when no curated PDF SVG exists."""
+    curated = _copy_exact_reference(text, out_dir)
+    if curated is not None:
+        return curated
+
+    fonts = _reference_font_paths(reference_font)
+    if not fonts:
+        raise FileNotFoundError(
+            f"no exact curated reference SVG for {text!r}, and DGRDOD_Bangla.ttf was not found"
+        )
+
+    ref = fonts[0]
+    raw = ref.read_bytes()
+    gids, positions, upm = _shape_with_positions(raw, text)
+
     from fontTools.pens.boundsPen import BoundsPen
     from fontTools.pens.svgPathPen import SVGPathPen
     from fontTools.ttLib import TTFont
 
-    raw = reference_font.read_bytes()
-    gids, positions, upm = _shape_with_positions(raw, text)
     font = TTFont(io.BytesIO(raw), lazy=False)
     try:
         glyph_set = font.getGlyphSet()
         order = font.getGlyphOrder()
         pen_x = pen_y = 0.0
-        parts_meta = []
+        meta = []
         overall = None
         for gid, (xoff, yoff, xadv, yadv) in zip(gids, positions):
-            if not 0 <= gid < len(order):
-                raise ValueError(f"reference GID {gid} outside font range")
             name = order[gid]
-            bpen = BoundsPen(glyph_set)
-            glyph_set[name].draw(bpen)
+            pen = BoundsPen(glyph_set)
+            glyph_set[name].draw(pen)
             dx, dy = pen_x + xoff, pen_y + yoff
-            if bpen.bounds:
-                x0, y0, x1, y1 = bpen.bounds
+            if pen.bounds:
+                x0, y0, x1, y1 = pen.bounds
                 b = (x0 + dx, y0 + dy, x1 + dx, y1 + dy)
-                overall = b if overall is None else (min(overall[0], b[0]), min(overall[1], b[1]), max(overall[2], b[2]), max(overall[3], b[3]))
-                parts_meta.append((name, dx, dy))
+                overall = b if overall is None else (
+                    min(overall[0], b[0]), min(overall[1], b[1]),
+                    max(overall[2], b[2]), max(overall[3], b[3])
+                )
+                meta.append((name, dx, dy))
             pen_x += xadv
             pen_y += yadv
+
         if overall is None:
             raise ValueError(f"no drawable outline produced for {text!r}; shaped GIDs={gids}")
+
         min_x, min_y, max_x, max_y = overall
         pad_units = max(upm * 0.03, 8.0)
-        min_x -= pad_units; min_y -= pad_units; max_x += pad_units; max_y += pad_units
-        width_units = max(max_x - min_x, 1.0); height_units = max(max_y - min_y, 1.0)
-        scale = min(pixel_size / width_units, pixel_size / height_units)
-        out_w = max(1, int(round(width_units * scale))); out_h = max(1, int(round(height_units * scale)))
+        min_x -= pad_units; min_y -= pad_units
+        max_x += pad_units; max_y += pad_units
+        width_units = max(max_x - min_x, 1.0)
+        height_units = max(max_y - min_y, 1.0)
+        scale = min(512.0 / width_units, 512.0 / height_units)
+        out_w = max(1, int(round(width_units * scale)))
+        out_h = max(1, int(round(height_units * scale)))
+
         paths = []
-        for name, dx, dy in parts_meta:
-            pen = SVGPathPen(glyph_set); glyph_set[name].draw(pen); d = pen.getCommands()
-            tx = (dx - min_x) * scale; ty = (max_y - dy) * scale
-            paths.append(f'<path d="{escape(d, quote=True)}" transform="translate({tx:.6f},{ty:.6f}) scale({scale:.8f},{-scale:.8f})" fill="#d11"/>')
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{out_w}" height="{out_h}" viewBox="0 0 {out_w} {out_h}" shape-rendering="geometricPrecision"><rect width="100%" height="100%" fill="white"/>{"".join(paths)}</svg>\n'
-        return svg, gids
+        for name, dx, dy in meta:
+            pen = SVGPathPen(glyph_set)
+            glyph_set[name].draw(pen)
+            d = pen.getCommands()
+            tx = (dx - min_x) * scale
+            ty = (max_y - dy) * scale
+            paths.append(
+                f'<path d="{escape(d, quote=True)}" transform="translate({tx:.6f},{ty:.6f}) '
+                f'scale({scale:.8f},{-scale:.8f})" fill="#d11"/>'
+            )
+
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{out_w}" height="{out_h}" '
+            f'viewBox="0 0 {out_w} {out_h}" shape-rendering="geometricPrecision">'
+            f'<rect width="100%" height="100%" fill="white"/>{"".join(paths)}</svg>\n'
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{text}.svg"
+        path.write_text(svg, encoding="utf-8", newline="\n")
+        print(f"GENGLYPH REFERENCE: generated from {ref}")
+        print(f"HARFBUZZ GIDS: {gids}")
+        print(f"SVG: {path.resolve()}")
+        return path
     finally:
         font.close()
 
 
-def generate_reference_glyph(text: str, out_dir: Path, reference_font: Path | None = None) -> Path:
-    """Generate only the deterministic reference SVG; PNG conversion is intentionally not used here."""
-    fonts = _reference_font_paths(reference_font)
-    if not fonts:
-        raise FileNotFoundError("DGRDOD_Bangla.ttf not found in the glyph-lab/reference locations")
-    ref = fonts[0]
-    svg, gids = _reference_text_svg(ref, text)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    svg_path = out_dir / f"{text}.svg"
-    svg_path.write_text(svg, encoding="utf-8", newline="\n")
-    print(f"GENGLYPH REFERENCE: {text!r}")
-    print(f"REFERENCE FONT: {ref}")
-    print(f"HARFBUZZ GIDS: {gids}")
-    print(f"SVG: {svg_path.resolve()}")
-    return svg_path
+def dump_text_glyph(
+    pdf: bytes,
+    page: int,
+    text: str,
+    out_dir: Path,
+    *,
+    mapping_path: Path | None = None,
+    learned_path: Path | None = None,
+    reference_font: Path | None = None,
+) -> Path:
+    """Generate/use the standalone reference artwork for --genglyph.
 
-
-def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = None, learned_path: Path | None = None, reference_font: Path | None = None) -> Path:
-    """Generate standalone exact reference artwork for --genglyph."""
+    When the user has already curated an exact PDF-derived reference SVG, use it
+    verbatim. This avoids Unicode shaping or font substitution changing the target.
+    """
     if not text:
         raise ValueError("genglyph text cannot be empty")
     return generate_reference_glyph(text, out_dir, reference_font)
+
 
 __all__ = ["dump_gids", "dump_text_glyph", "generate_reference_glyph"]
