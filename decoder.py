@@ -12,6 +12,7 @@ from src.ec_pdf_decoder.learned_mapping import font_key,glyph_fingerprint_map,bu
 from src.ec_pdf_decoder.direct_review_v2 import run as review_run
 from src.ec_pdf_decoder.debug_genglyph import debug_genglyph
 from src.ec_pdf_decoder.glyph_dump import dump_gids,dump_text_glyph
+from src.ec_pdf_decoder.exact_genglyph import match_reference
 from src.ec_pdf_decoder.unicode_ttf import generate as generate_unicode_ttf
 
 @lru_cache(maxsize=4)
@@ -115,7 +116,7 @@ def main()->int:
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False); parser.add_argument('--all-pages',action='store_true',help='decode every PDF page sequentially')
     parser.add_argument('--mapping',type=Path,default=Path('custom_glyph_map.json')); parser.add_argument('--learned',type=Path,default=Path('learned_glyph_map.json')); parser.add_argument('--corrections',type=Path,default=Path('data/bangla_corrections.json'))
     parser.add_argument('--review',action='store_true'); parser.add_argument('--dump',action='store_true',help='dump each unresolved red glyph as an SVG named by CID into ./svgs')
-    parser.add_argument('--genglyph',help='render the supplied Bangla text with the PDF page embedded font into ./svgs/<text>.svg')
+    parser.add_argument('--genglyph',help='match supplied Bangla text against PDF-derived reference glyphs and dump the exact 100% matching unresolved CID')
     parser.add_argument('--debug-genglyph',help='print evidence from the PDF font/content stream for the supplied Bangla text; does not modify files')
     parser.add_argument('--profile',action='store_true',help='print timing for each decoder stage; does not change decoding'); parser.add_argument('--gid',type=int); parser.add_argument('--text',type=Path); parser.add_argument('--json',dest='json_path',type=Path); parser.add_argument('--generate-ttf',action='store_true',help='generate a Unicode TTF from confirmed learned glyph mappings; no PDF/page required')
     args=parser.parse_args()
@@ -139,7 +140,7 @@ def main()->int:
         page=args.page or 1
         try:
             pdf=read_pdf_bytes(args.pdf)
-            output=dump_text_glyph(pdf,page,args.genglyph,Path('svgs'))
+            output=match_reference(pdf,page,args.genglyph,Path('svgs'))
         except Exception as exc:
             print(f'GLYPH GENERATION FAILED: {exc}'); return 1
         print(f'GLYPH: {args.genglyph}')
