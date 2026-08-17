@@ -111,6 +111,25 @@ def decode_pdf(pdf_path:str|Path,page:int,review:bool=False,*,mapping_path:str|P
         try: materialized.unlink(missing_ok=True)
         except PermissionError: pass
 
+def decode_pdf_all(pdf_path:str|Path,review:bool=False,*,mapping_path:str|Path='custom_glyph_map.json',learned_path:str|Path='learned_glyph_map.json',corrections_path:str|Path='data/bangla_corrections.json',gid:int|None=None,learned_db=None,profile:bool=False,dump:bool=False):
+    """Decode every PDF page and return one formatted string with page delimiters."""
+    from pypdf import PdfReader
+    pdf_path=Path(pdf_path)
+    page_count=len(PdfReader(str(pdf_path)).pages)
+    shared_learned=_load_learned_database(Path(learned_path)) if learned_db is None else learned_db
+    chunks=[]
+    for page in range(1,page_count+1):
+        print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
+        try:
+            text,report=decode_pdf(pdf_path,page,review,mapping_path=mapping_path,learned_path=learned_path,corrections_path=corrections_path,gid=gid,return_report=True,learned_db=shared_learned,profile=profile,dump=dump)
+            if review:
+                _clear_learned_cache(); shared_learned=_load_learned_database(Path(learned_path))
+        except Exception as exc:
+            text=f'[PAGE {page} FAILED: {exc}]'
+            print(text,flush=True)
+        chunks.append(f'<<<page:{page}>>>\n{text}\n<<<END>>>')
+    return '\n'.join(chunks)
+
 def main()->int:
     parser=argparse.ArgumentParser(description='Decode Bangladesh EC Bangla PDF text')
     parser.add_argument('pdf',type=Path,nargs='?',help='PDF input (not needed with --generate-ttf)'); parser.add_argument('--page',type=int,required=False); parser.add_argument('--all-pages',action='store_true',help='decode every PDF page sequentially')
@@ -126,6 +145,7 @@ def main()->int:
         print('GENERATING UNICODE TTF'); print('======================'); print(f'Source glyph mappings : {stats["source_glyph_mappings"]}'); print(f'Single Unicode maps   : {stats["single_unicode_mappings"]}'); print(f'OpenType ligatures    : {stats["ligature_mappings"]}'); print(f'TTF: {output}'); return 0
     if args.pdf is None: parser.error('the following arguments are required: pdf (unless --generate-ttf is used)')
     if args.genglyph is not None and args.debug_genglyph is not None: parser.error('--genglyph and --debug-genglyph cannot be used together')
+    if args.all_pages and args.page is not None: parser.error('--page and --all-pages cannot be used together')
     if args.debug_genglyph is not None:
         if args.all_pages: parser.error('--debug-genglyph cannot be combined with --all-pages')
         page=args.page or 1
@@ -141,37 +161,19 @@ def main()->int:
         try:
             pdf=read_pdf_bytes(args.pdf)
             output=match_reference(pdf,page,args.genglyph,Path('svgs'))
-        except Exception as exc:
-            print(f'GLYPH GENERATION FAILED: {exc}'); return 1
-        print(f'GLYPH: {args.genglyph}')
-        print(f'PAGE: {page}')
-        print(f'SVG: {output.resolve()}')
-        return 0
-    if args.all_pages and args.page is not None: parser.error('--page and --all-pages cannot be used together')
-    if not args.all_pages and args.page is None: parser.error('--page is required unless --all-pages or --generate-ttf is used')
+        except Exception as exc: print(f'GLYPH GENERATION FAILED: {exc}'); return 1
+        print(f'GLYPH: {args.genglyph}'); print(f'PAGE: {page}'); print(f'SVG: {output.resolve()}'); return 0
     if args.all_pages:
         try:
-            from pypdf import PdfReader
-            page_count=len(PdfReader(str(args.pdf)).pages)
+            combined=decode_pdf_all(args.pdf,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,profile=args.profile,dump=args.dump)
         except Exception as exc:
-            print(f'DECODE FAILED: could not determine page count: {exc}'); return 1
-        all_text=[]; any_unresolved=False; learned_db=_load_learned_database(args.learned)
-        for page in range(1,page_count+1):
-            print(f'\n===== PAGE {page}/{page_count} =====',flush=True)
-            try:
-                text,report=decode_pdf(args.pdf,page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile,dump=args.dump)
-                all_text.append(text)
-                if args.review: learned_db=_load_learned_database(args.learned)
-                missing=report.get('missing_cids',[]); any_unresolved |= bool(missing)
-                print(f'PAGE: {page} | MAPPED ENTRIES: {report.get("tounicode_entries",0)} | UNRESOLVED CIDs: {missing}',flush=True)
-                print(text,flush=True)
-            except Exception as exc:
-                print(f'PAGE {page} FAILED: {exc}',flush=True); any_unresolved=True; all_text.append('')
-        combined='\n'.join(all_text)
+            print(f'DECODE FAILED: {exc}'); return 1
+        print(combined)
         if args.text: args.text.write_text(combined+'\n',encoding='utf-8')
-        if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name,'pages':page_count},ensure_ascii=False,indent=2),encoding='utf-8')
-        return 2 if any_unresolved else 0
-    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=learned_db,profile=args.profile,dump=args.dump)
+        if args.json_path: args.json_path.write_text(json.dumps({'pdf':args.pdf.name},ensure_ascii=False,indent=2),encoding='utf-8')
+        return 0
+    if args.page is None: parser.error('--page is required unless --all-pages or --generate-ttf is used')
+    try: text,report=decode_pdf(args.pdf,args.page,args.review,mapping_path=args.mapping,learned_path=args.learned,corrections_path=args.corrections,gid=args.gid,return_report=True,learned_db=None,profile=args.profile,dump=args.dump)
     except Exception as exc: print(f'DECODE FAILED: {exc}'); return 1
     print(f'PDF: {args.pdf.name}'); print(f'PAGE: {args.page}'); print(f'MAPPED ENTRIES: {report["tounicode_entries"]}'); print(f'UNRESOLVED CIDs: {report["missing_cids"]}'); print('\n# DECODED TEXT'); print('='*72); print(text)
     if args.text: args.text.write_text(text+'\n',encoding='utf-8')
