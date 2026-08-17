@@ -1,7 +1,8 @@
-"""Dump unresolved PDF glyphs and manually requested text using embedded PDF fonts."""
+"""Dump unresolved PDF glyphs and generate exact reference glyph artwork."""
 from __future__ import annotations
 
 import json
+import io
 from html import escape
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def _single_gid_svg(font_path: Path, gid: int) -> str:
         bounds_pen = BoundsPen(glyph_set)
         glyph_set[name].draw(bounds_pen)
         if not bounds_pen.bounds:
-            return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{canvas}" height="{canvas}" viewBox="0 0 {canvas} {canvas}"><rect width="{canvas}" height="{canvas}" fill="#fff"/><text x="8" y="128" fill="#d11" font-size="18">GID {gid} has no outline</text></svg>\n'''
+            raise ValueError(f"GID {gid} ({name}) has no drawable outline")
         x0, y0, x1, y1 = bounds_pen.bounds
         width = max(x1 - x0, 1.0)
         height = max(y1 - y0, 1.0)
@@ -47,7 +48,7 @@ def _single_gid_svg(font_path: Path, gid: int) -> str:
 
 
 def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
-    """Write one standalone red SVG per requested GID and return count written."""
+    """Write one standalone red SVG per requested PDF GID and return count written."""
     out_dir.mkdir(parents=True, exist_ok=True)
     wanted = sorted(set(int(g) for g in gids))
     if not wanted:
@@ -57,19 +58,21 @@ def dump_gids(pdf: bytes, page: int, gids: list[int], out_dir: Path) -> int:
         if not raw:
             continue
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
-            tmp.write(raw)
-            font_path = Path(tmp.name)
+        font_path = None
         try:
+            with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
+                tmp.write(raw)
+                font_path = Path(tmp.name)
             for gid in wanted:
                 path = out_dir / f"{gid}.svg"
                 path.write_text(_single_gid_svg(font_path, gid), encoding="utf-8", newline="\n")
                 written += 1
         finally:
-            try:
-                font_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            if font_path is not None:
+                try:
+                    font_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
         break
     return written
 
@@ -165,13 +168,7 @@ def _harfbuzz_single_gid(raw: bytes, text: str) -> int | None:
 
 
 def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
-    """Return likely copies of the original/full DGRDOD Bangla font.
-
-    The user's glyph lab keeps this original font beside the experiment. The
-    embedded PDF font is usually a subset, so its Unicode cmap/GSUB may have
-    been stripped. We use the full font only to identify the intended glyph by
-    outline fingerprint, then extract the exact matching glyph from the PDF.
-    """
+    """Return likely copies of the original/full DGRDOD Bangla font."""
     paths: list[Path] = []
     if explicit is not None:
         paths.append(Path(explicit))
@@ -195,72 +192,121 @@ def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
     return out
 
 
-def _reference_single_gid(reference_font: Path, text: str) -> int | None:
-    """Shape text with the full reference font and accept only one resulting GID."""
-    from .bangla_harfbuzz import shape_gids
+def _shape_with_positions(font_bytes: bytes, text: str) -> tuple[list[int], list[tuple[int, int, int, int]]]:
+    """Shape text and return (GIDs, x/y offsets + advances) using real HarfBuzz positions."""
+    import uharfbuzz as hb
+    from fontTools.ttLib import TTFont
+
+    face = hb.Face(font_bytes)
+    font = hb.Font(face)
+    with TTFont(io.BytesIO(font_bytes), lazy=False) as ttf:
+        upm = int(ttf["head"].unitsPerEm)
+    font.scale = (upm, upm)
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.direction = "ltr"
+    buf.script = "beng"
+    buf.language = "bn"
+    hb.shape(font, buf)
+    infos = buf.glyph_infos
+    poss = buf.glyph_positions
+    gids = [int(info.codepoint) for info in infos]
+    positions = [(int(p.x_offset), int(p.y_offset), int(p.x_advance), int(p.y_advance)) for p in poss]
+    return gids, positions
+
+
+def _reference_text_svg(reference_font: Path, text: str, size: int = 512, pad: float = 16.0) -> tuple[str, list[int]]:
+    """Render a tightly cropped SVG from the full reference font using exact HarfBuzz positions."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.pens.svgPathPen import SVGPathPen
+    from fontTools.ttLib import TTFont
+
     raw = reference_font.read_bytes()
-    shaped = shape_gids(raw, text)
-    if shaped is None or len(shaped) != 1:
-        return None
-    return int(shaped[0])
+    gids, positions = _shape_with_positions(raw, text)
+    font = TTFont(io.BytesIO(raw), lazy=False)
+    try:
+        glyph_set = font.getGlyphSet()
+        order = font.getGlyphOrder()
+        upm = float(font["head"].unitsPerEm")
+        cursor_x = 0.0
+        cursor_y = 0.0
+        bounds = None
+        glyph_meta = []
+        for gid, (xoff, yoff, xadv, yadv) in zip(gids, positions):
+            if gid < 0 or gid >= len(order):
+                raise ValueError(f"reference GID {gid} outside font range")
+            name = order[gid]
+            pen = BoundsPen(glyph_set)
+            glyph_set[name].draw(pen)
+            if pen.bounds:
+                x0, y0, x1, y1 = pen.bounds
+                dx = cursor_x + xoff
+                dy = cursor_y + yoff
+                b = (x0 + dx, y0 + dy, x1 + dx, y1 + dy)
+                bounds = b if bounds is None else (
+                    min(bounds[0], b[0]), min(bounds[1], b[1]),
+                    max(bounds[2], b[2]), max(bounds[3], b[3])
+                )
+                glyph_meta.append((name, dx, dy))
+            cursor_x += xadv
+            cursor_y += yadv
+
+        if bounds is None:
+            raise ValueError(f"reference font produced no drawable outline for {text!r} (gids={gids})")
+
+        min_x, min_y, max_x, max_y = bounds
+        width_units = max(max_x - min_x, 1.0)
+        height_units = max(max_y - min_y, 1.0)
+        scale = min((size - 2 * pad) / width_units, (size - 2 * pad) / height_units)
+        width = int(round(width_units * scale + 2 * pad))
+        height = int(round(height_units * scale + 2 * pad))
+        parts = []
+        for name, dx, dy in glyph_meta:
+            pen = SVGPathPen(glyph_set)
+            glyph_set[name].draw(pen)
+            d = pen.getCommands()
+            tx = pad + (dx - min_x) * scale
+            ty = pad + (max_y - dy) * scale
+            parts.append(
+                f'<path d="{escape(d, quote=True)}" transform="translate({tx:.5f},{ty:.5f}) scale({scale:.8f},{-scale:.8f})" fill="#d11"/>'
+            )
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}" shape-rendering="geometricPrecision">'
+            f'<path d="M0 0H{width}V{height}H0Z" fill="#fff"/>{"".join(parts)}</svg>\n'
+        )
+        return svg, gids
+    finally:
+        font.close()
 
 
-def _reference_fingerprint_gid(reference_font: Path, text: str) -> tuple[str, int] | None:
-    """Return the exact reference-glyph fingerprint for the requested text."""
-    gid = _reference_single_gid(reference_font, text)
-    if gid is None:
-        return None
-    return glyph_key(reference_font, gid), gid
-
-
-def _embedded_gid_by_fingerprint(raw: bytes, wanted_key: str) -> int | None:
-    matches = [gid for gid, gkey in glyph_fingerprint_map(raw).items() if gkey == wanted_key]
-    return _unique_gids(matches, "reference-font fingerprint")
-
-
-def _find_reference_match(raw: bytes, text: str, reference_fonts: list[Path]) -> tuple[int, str] | None:
-    for reference_font in reference_fonts:
-        try:
-            result = _reference_fingerprint_gid(reference_font, text)
-        except Exception:
-            result = None
-        if result is None:
-            continue
-        wanted_key, ref_gid = result
-        current_gid = _embedded_gid_by_fingerprint(raw, wanted_key)
-        if current_gid is not None:
-            return current_gid, f"reference font {reference_font} GID {ref_gid} fingerprint"
-    return None
-
-
-def _find_exact_gid(
-    raw: bytes,
-    base_font: str,
-    text: str,
-    mapping_path: Path | None,
-    learned_path: Path | None,
-    reference_fonts: list[Path],
-) -> tuple[int, str]:
-    """Resolve text to one exact embedded-font GID; never synthesize multiple glyphs."""
-    gid = _learned_text_gid(learned_path, raw, base_font, text)
-    if gid is not None:
-        return gid, "confirmed learned mapping"
-    gid = _mapping_text_gid(mapping_path, base_font, text)
-    if gid is not None:
-        return gid, "custom mapping"
-    gid = _font_exact_text_gid(raw, text)
-    if gid is not None:
-        return gid, "embedded font cmap/glyph name"
-    gid = _harfbuzz_single_gid(raw, text)
-    if gid is not None:
-        return gid, "embedded font OpenType shaping (single GID)"
-    ref_match = _find_reference_match(raw, text, reference_fonts)
-    if ref_match is not None:
-        return ref_match
-    raise ValueError(
-        f"no exact single embedded-font GID is known for {text!r}; "
-        "the subset font has no direct mapping and the full reference font did not yield a matching outline fingerprint"
-    )
+def generate_reference_glyph(text: str, out_dir: Path, reference_font: Path | None = None) -> tuple[Path, Path | None, list[int], Path]:
+    """Generate exact reference SVG/PNG artwork for manual text; no PDF glyph mapping is claimed."""
+    fonts = _reference_font_paths(reference_font)
+    if not fonts:
+        raise FileNotFoundError("DGRDOD_Bangla.ttf not found; expected it in tools/glyph_lab or experiment/fonts")
+    ref = fonts[0]
+    svg, gids = _reference_text_svg(ref, text)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = text
+    svg_path = out_dir / f"{safe_name}.svg"
+    svg_path.write_text(svg, encoding="utf-8", newline="\n")
+    png_path = None
+    try:
+        import cairosvg
+        png_path = out_dir / f"{safe_name}.png"
+        cairosvg.svg2png(bytestring=svg.encode("utf-8"), write_to=str(png_path), output_width=512, output_height=512)
+    except Exception:
+        png_path = None
+    print(f"GENGLYPH REFERENCE: {text!r}")
+    print(f"REFERENCE FONT: {ref}")
+    print(f"HARFBUZZ GIDS: {gids}")
+    print(f"SVG: {svg_path.resolve()}")
+    if png_path is not None:
+        print(f"PNG: {png_path.resolve()}")
+    else:
+        print("PNG: unavailable (CairoSVG not installed)")
+    return svg_path, png_path, gids, ref
 
 
 def dump_text_glyph(
@@ -273,39 +319,53 @@ def dump_text_glyph(
     learned_path: Path | None = Path('learned_glyph_map.json'),
     reference_font: Path | None = None,
 ) -> Path:
-    """Dump the exact embedded PDF glyph mapped to text.
+    """Generate the manual reference artwork first, then use confirmed PDF mapping if available.
 
-    For subsetted PDF fonts, the original/full DGRDOD Bangla font is used only
-    as a lookup key: HarfBuzz identifies the intended full-font glyph, its
-    outline fingerprint is computed, and the matching GID is located inside
-    the embedded PDF subset. The saved SVG always comes from the PDF font.
+    For ambiguous subset fonts, the reference SVG/PNG is still generated so it can
+    be matched visually outside the browser review box. The function never claims
+    an arbitrary PDF CID is the answer.
     """
     if not text:
         raise ValueError('genglyph text cannot be empty')
     out_dir.mkdir(parents=True, exist_ok=True)
-    reference_fonts = _reference_font_paths(reference_font)
+
+    # Always generate the actual requested Bangla artwork from the full reference font.
+    ref_svg, _ref_png, _ref_gids, _ref_font = generate_reference_glyph(text, out_dir, reference_font)
+
+    # If a confirmed exact PDF mapping already exists, keep the useful PDF-derived output too.
     errors = []
     for resource, base_font, raw in embedded_fonts(pdf, page):
         if not raw:
             continue
         try:
-            gid, source = _find_exact_gid(raw, base_font, text, mapping_path, learned_path, reference_fonts)
+            gid = _learned_text_gid(learned_path, raw, base_font, text)
+            if gid is None:
+                gid = _mapping_text_gid(mapping_path, base_font, text)
+            if gid is None:
+                gid = _font_exact_text_gid(raw, text)
+            if gid is None:
+                gid = _harfbuzz_single_gid(raw, text)
+            if gid is None:
+                break
             import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
-                tmp.write(raw)
-                font_path = Path(tmp.name)
+            font_path = None
             try:
+                with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
+                    tmp.write(raw)
+                    font_path = Path(tmp.name)
                 svg = _single_gid_svg(font_path, gid)
             finally:
-                try:
-                    font_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            path = out_dir / f'{text}.svg'
-            path.write_text(svg, encoding='utf-8', newline='\n')
-            print(f'GENGLYPH: {text!r} -> GID {gid} ({source})', flush=True)
-            return path
+                if font_path is not None:
+                    try:
+                        font_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            pdf_path = out_dir / f'{text}.pdf-gid-{gid}.svg'
+            pdf_path.write_text(svg, encoding='utf-8', newline='\n')
+            print(f'GENGLYPH PDF MATCH: {text!r} -> GID {gid} ({resource}/{base_font})', flush=True)
+            return ref_svg
         except Exception as exc:
             errors.append(f'{resource}/{base_font}: {exc}')
-    detail = '; '.join(errors) if errors else 'no embedded FontFile2 resource found on the selected page'
-    raise ValueError(f'could not find an exact embedded PDF glyph for {text!r}: {detail}')
+
+    print(f"GENGLYPH: no confirmed single embedded-PDF GID for {text!r}; reference artwork generated for external visual matching.", flush=True)
+    return ref_svg
