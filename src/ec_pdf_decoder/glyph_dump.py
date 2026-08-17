@@ -5,8 +5,8 @@ import json
 from html import escape
 from pathlib import Path
 
-from .direct_pdf_fixed import embedded_fonts, ttf_gid_map, used_gids
-from .learned_mapping import font_key, load_database
+from .direct_pdf_fixed import embedded_fonts
+from .learned_mapping import font_key, glyph_fingerprint_map, glyph_key, load_database
 
 
 def _single_gid_svg(font_path: Path, gid: int) -> str:
@@ -151,9 +151,8 @@ def _font_exact_text_gid(raw: bytes, text: str) -> int | None:
 def _harfbuzz_single_gid(raw: bytes, text: str) -> int | None:
     """Resolve logical Bangla text through the embedded font's own GSUB shaping.
 
-    This is only accepted when HarfBuzz produces exactly one GID. If it produces
-    multiple glyphs, we refuse to guess because that would be a synthesized
-    sequence rather than a single PDF glyph.
+    Only a one-GID result is accepted. A multi-GID shaping result is not an
+    exact single PDF glyph, so it is deliberately rejected here.
     """
     try:
         from .bangla_harfbuzz import shape_gids
@@ -165,26 +164,84 @@ def _harfbuzz_single_gid(raw: bytes, text: str) -> int | None:
     return int(shaped[0])
 
 
-def _single_unresolved_pdf_gid(pdf: bytes, page: int, raw: bytes) -> int | None:
-    """Return the one unresolved GID used by the PDF page, when unambiguous.
+def _reference_font_paths(explicit: Path | None = None) -> list[Path]:
+    """Return likely copies of the original/full DGRDOD Bangla font.
 
-    This is the important fallback for a manual ``--genglyph`` request: the
-    user is naming the red/missing glyph they are looking at. If that page has
-    exactly one unresolved CID/GID, its embedded outline is the authoritative
-    glyph. The supplied Unicode text is then used only as the output filename;
-    we do not pretend the font's cmap/GSUB can identify the PDF glyph.
+    The user's glyph lab keeps this original font beside the experiment. The
+    embedded PDF font is usually a subset, so its Unicode cmap/GSUB may have
+    been stripped. We use the full font only to identify the intended glyph by
+    outline fingerprint, then extract the exact matching glyph from the PDF.
     """
-    try:
-        mapping = ttf_gid_map(raw)
-        gids = sorted(set(int(g) for g in used_gids(pdf, page)))
-        unresolved = [gid for gid in gids if gid >= 120 and gid not in mapping]
-        return unresolved[0] if len(unresolved) == 1 else None
-    except Exception:
+    paths: list[Path] = []
+    if explicit is not None:
+        paths.append(Path(explicit))
+    paths.extend([
+        Path("tools/glyph_lab/DGRDOD_Bangla.ttf"),
+        Path("tools/glyph_lab/glyph_lab/DGRDOD_Bangla.ttf"),
+        Path("experiment/fonts/DGRDOD_Bangla.ttf"),
+        Path("DGRDOD_Bangla.ttf"),
+    ])
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        try:
+            key = str(path.resolve())
+        except OSError:
+            key = str(path)
+        if key in seen or not path.exists():
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _reference_single_gid(reference_font: Path, text: str) -> int | None:
+    """Shape text with the full reference font and accept only one resulting GID."""
+    from .bangla_harfbuzz import shape_gids
+    raw = reference_font.read_bytes()
+    shaped = shape_gids(raw, text)
+    if shaped is None or len(shaped) != 1:
         return None
+    return int(shaped[0])
 
 
-def _find_exact_gid(pdf: bytes, page: int, raw: bytes, base_font: str, text: str, mapping_path: Path | None, learned_path: Path | None) -> tuple[int, str]:
-    """Resolve text to one exact embedded-font GID; never synthesize a shaped sequence."""
+def _reference_fingerprint_gid(reference_font: Path, text: str) -> tuple[str, int] | None:
+    """Return the exact reference-glyph fingerprint for the requested text."""
+    gid = _reference_single_gid(reference_font, text)
+    if gid is None:
+        return None
+    return glyph_key(reference_font, gid), gid
+
+
+def _embedded_gid_by_fingerprint(raw: bytes, wanted_key: str) -> int | None:
+    matches = [gid for gid, gkey in glyph_fingerprint_map(raw).items() if gkey == wanted_key]
+    return _unique_gids(matches, "reference-font fingerprint")
+
+
+def _find_reference_match(raw: bytes, text: str, reference_fonts: list[Path]) -> tuple[int, str] | None:
+    for reference_font in reference_fonts:
+        try:
+            result = _reference_fingerprint_gid(reference_font, text)
+        except Exception:
+            result = None
+        if result is None:
+            continue
+        wanted_key, ref_gid = result
+        current_gid = _embedded_gid_by_fingerprint(raw, wanted_key)
+        if current_gid is not None:
+            return current_gid, f"reference font {reference_font} GID {ref_gid} fingerprint"
+    return None
+
+
+def _find_exact_gid(
+    raw: bytes,
+    base_font: str,
+    text: str,
+    mapping_path: Path | None,
+    learned_path: Path | None,
+    reference_fonts: list[Path],
+) -> tuple[int, str]:
+    """Resolve text to one exact embedded-font GID; never synthesize multiple glyphs."""
     gid = _learned_text_gid(learned_path, raw, base_font, text)
     if gid is not None:
         return gid, "confirmed learned mapping"
@@ -197,27 +254,42 @@ def _find_exact_gid(pdf: bytes, page: int, raw: bytes, base_font: str, text: str
     gid = _harfbuzz_single_gid(raw, text)
     if gid is not None:
         return gid, "embedded font OpenType shaping (single GID)"
-    gid = _single_unresolved_pdf_gid(pdf, page, raw)
-    if gid is not None:
-        return gid, "single unresolved PDF GID on selected page"
+    ref_match = _find_reference_match(raw, text, reference_fonts)
+    if ref_match is not None:
+        return ref_match
     raise ValueError(
         f"no exact single embedded-font GID is known for {text!r}; "
-        "the embedded font either has no direct mapping, shapes this text into multiple GIDs, "
-        "or the page contains multiple unresolved PDF glyphs"
+        "the subset font has no direct mapping and the full reference font did not yield a matching outline fingerprint"
     )
 
 
-def dump_text_glyph(pdf: bytes, page: int, text: str, out_dir: Path, *, mapping_path: Path | None = Path('custom_glyph_map.json'), learned_path: Path | None = Path('learned_glyph_map.json')) -> Path:
-    """Dump the authoritative embedded PDF glyph for a manual Unicode label."""
+def dump_text_glyph(
+    pdf: bytes,
+    page: int,
+    text: str,
+    out_dir: Path,
+    *,
+    mapping_path: Path | None = Path('custom_glyph_map.json'),
+    learned_path: Path | None = Path('learned_glyph_map.json'),
+    reference_font: Path | None = None,
+) -> Path:
+    """Dump the exact embedded PDF glyph mapped to text.
+
+    For subsetted PDF fonts, the original/full DGRDOD Bangla font is used only
+    as a lookup key: HarfBuzz identifies the intended full-font glyph, its
+    outline fingerprint is computed, and the matching GID is located inside
+    the embedded PDF subset. The saved SVG always comes from the PDF font.
+    """
     if not text:
         raise ValueError('genglyph text cannot be empty')
     out_dir.mkdir(parents=True, exist_ok=True)
+    reference_fonts = _reference_font_paths(reference_font)
     errors = []
     for resource, base_font, raw in embedded_fonts(pdf, page):
         if not raw:
             continue
         try:
-            gid, source = _find_exact_gid(pdf, page, raw, base_font, text, mapping_path, learned_path)
+            gid, source = _find_exact_gid(raw, base_font, text, mapping_path, learned_path, reference_fonts)
             import tempfile
             with tempfile.NamedTemporaryFile(suffix='.ttf', delete=False) as tmp:
                 tmp.write(raw)
