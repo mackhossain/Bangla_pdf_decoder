@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from .direct_pdf_fixed import embedded_fonts, ttf_gid_map, used_gids
+from .direct_pdf_fixed import embedded_fonts
 from .glyph_dump import _single_gid_svg
 
 REFERENCE_DB = Path("tools/glyph_lab/reference_glyphs.json")
@@ -83,8 +83,55 @@ def _svg_score(a: str, b: str) -> float:
         return 0.0
 
 
+def _font_gid_count(font_bytes: bytes) -> int:
+    """Return the actual TrueType glyph count, not the Unicode cmap count."""
+    from fontTools.ttLib import TTFont
+
+    font = TTFont(io.BytesIO(font_bytes), lazy=False)
+    try:
+        return len(font.getGlyphOrder())
+    finally:
+        font.close()
+
+
+def _candidate_gids(font_bytes: bytes) -> list[int]:
+    """Return every drawable GID in the embedded font.
+
+    The previous implementation only considered CIDs that were used on the
+    selected page and also unmapped by cmap. That was wrong for --genglyph:
+    the gold reference may be a valid glyph in the embedded subset but simply
+    not be used on the selected page. The reference for `শ্চ` was GID 340, for
+    example, while the page's unresolved-used list did not contain 340.
+    """
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+
+    font = TTFont(io.BytesIO(font_bytes), lazy=False)
+    try:
+        glyph_set = font.getGlyphSet()
+        order = font.getGlyphOrder()
+        result: list[int] = []
+        for gid, name in enumerate(order):
+            pen = BoundsPen(glyph_set)
+            try:
+                glyph_set[name].draw(pen)
+            except Exception:
+                continue
+            if pen.bounds:
+                result.append(gid)
+        return result
+    finally:
+        font.close()
+
+
 def match_reference(pdf: bytes, page: int, text: str, out_dir: Path) -> Path:
-    """Match a PDF-derived reference glyph against unresolved CIDs and dump the winner."""
+    """Match a PDF-derived reference glyph against every drawable embedded-font GID.
+
+    This intentionally does NOT require the target GID to be used by the selected
+    page. A reference glyph can be present in the embedded subset but absent from
+    that page's content stream. The match is visual and exact: if the candidate SVG
+    normalizes byte-for-byte to the stored reference SVG, it is accepted as 100%.
+    """
     ref = _reference_svg(text)
     if ref is None:
         raise ValueError(
@@ -99,17 +146,16 @@ def match_reference(pdf: bytes, page: int, text: str, out_dir: Path) -> Path:
     for resource, font_name, font_bytes in embedded_fonts(pdf, page):
         if not font_bytes:
             continue
-        cmap = ttf_gid_map(font_bytes)
-        used = sorted(set(int(cid) for cid in used_gids(pdf, page)))
-        unresolved = [cid for cid in used if cid not in cmap]
-
-        for cid in unresolved:
+        candidate_ids = _candidate_gids(font_bytes)
+        for gid in candidate_ids:
             tmp_path = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as tmp:
                     tmp.write(font_bytes)
                     tmp_path = Path(tmp.name)
-                candidate_svg = _single_gid_svg(tmp_path, cid)
+                candidate_svg = _single_gid_svg(tmp_path, gid)
+            except Exception:
+                continue
             finally:
                 if tmp_path is not None:
                     try:
@@ -119,7 +165,7 @@ def match_reference(pdf: bytes, page: int, text: str, out_dir: Path) -> Path:
 
             score = _svg_score(reference_svg, candidate_svg)
             resource_label = str(resource)
-            scored.append((score, cid, resource_label, str(font_name)))
+            scored.append((score, gid, resource_label, str(font_name)))
 
             if score >= 100.0:
                 path = out_dir / f"{text}.svg"
@@ -131,26 +177,27 @@ def match_reference(pdf: bytes, page: int, text: str, out_dir: Path) -> Path:
                             "text": text,
                             "matched": True,
                             "score": 100.0,
-                            "cid": cid,
+                            "gid": gid,
                             "resource": resource_label,
                             "font": str(font_name),
                             "reference": meta,
+                            "candidate_scope": "all drawable GIDs in embedded font",
                         },
                         ensure_ascii=False,
                         indent=2,
                     ),
                     encoding="utf-8",
                 )
-                print(f"GENGLYPH EXACT: {text!r} -> CID {cid} (100.000%)")
+                print(f"GENGLYPH EXACT: {text!r} -> GID {gid} (100.000%)")
                 print(f"SVG: {path.resolve()}")
                 return path
 
     if not scored:
-        raise ValueError(f"no unresolved PDF CIDs found for {text!r} on page {page}")
+        raise ValueError(f"no drawable GIDs found in embedded PDF font for {text!r} on page {page}")
 
     scored.sort(reverse=True)
     print(f"GENGLYPH: no exact 100% match for {text!r}")
     print("TOP CANDIDATES:")
-    for score, cid, resource, font_name in scored[:5]:
-        print(f"  CID {cid}: {score:.3f}% ({resource}/{font_name})")
+    for score, gid, resource, font_name in scored[:5]:
+        print(f"  GID {gid}: {score:.3f}% ({resource}/{font_name})")
     raise ValueError(f"no exact visual match found for {text!r}")
