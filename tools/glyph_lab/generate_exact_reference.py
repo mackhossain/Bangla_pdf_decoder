@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# This script is normally launched as:
+#   python tools\glyph_lab\generate_exact_reference.py ...
+# In that mode Python puts tools\glyph_lab on sys.path, not the repository
+# root, so `import src...` would fail. Add the repo root explicitly.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.ec_pdf_decoder.direct_pdf_fixed import embedded_fonts
 from src.ec_pdf_decoder.glyph_dump import _single_gid_svg
