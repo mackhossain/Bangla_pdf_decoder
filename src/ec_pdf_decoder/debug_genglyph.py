@@ -7,6 +7,7 @@ requested Unicode candidate, including the real CIDToGIDMap used by the font.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from . import direct_pdf as _direct
@@ -27,8 +28,45 @@ def _candidate_status(text: str, candidate_path: Path = Path("data/bangla_conjun
     return "candidate database: NO"
 
 
+def _first_pdf_ref(value: bytes | None) -> int | None:
+    if not value:
+        return None
+    match = re.fullmatch(rb"\s*(\d+)\s+(\d+)\s+R\s*", value, re.S)
+    if match:
+        return int(match.group(1))
+    match = re.fullmatch(rb"\s*\[\s*(\d+)\s+(\d+)\s+R\s*\]\s*", value, re.S)
+    if match:
+        return int(match.group(1))
+    match = re.search(rb"(?:^|\s)(\d+)\s+(\d+)\s+R(?:\s|$)", value, re.S)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _resolve_pdf_value(objects: dict[int, bytes], value: bytes | None) -> tuple[bytes | None, int | None]:
+    current = value
+    ref = _first_pdf_ref(current)
+    for _ in range(8):
+        if ref is None:
+            return current, None
+        current = objects.get(ref)
+        if current is None:
+            return None, ref
+        next_ref = _first_pdf_ref(current)
+        if next_ref is None:
+            return current, ref
+        ref = next_ref
+    return current, ref
+
+
 def _cid_to_gid_maps(pdf: bytes, page: int) -> tuple[dict[str, dict], list[str]]:
-    """Read the PDF /CIDToGIDMap for the fonts used on one page."""
+    """Read the PDF /CIDToGIDMap for the fonts used on one page.
+
+    The diagnostic intentionally uses a strict PDF-reference parser here rather
+    than treating any N 0 R buried inside a dictionary as the dictionary's
+    reference. This also prints the font/descendant structure when the map is
+    unavailable, so the next debugging step is evidence-based.
+    """
     objects = _direct.object_map(pdf)
     pgs = _direct.pages(objects)
     if not 1 <= page <= len(pgs):
@@ -45,30 +83,69 @@ def _cid_to_gid_maps(pdf: bytes, page: int) -> tuple[dict[str, dict], list[str]]
         resource_name = resource.decode("latin1")
         font_body = objects.get(font_ref, b"")
         descendant_value = _direct.dict_value(font_body, b"DescendantFonts")
-        descendant = _direct.resolve(objects, descendant_value)
+        descendant_ref = _first_pdf_ref(descendant_value)
+        descendant, resolved_desc_ref = _resolve_pdf_value(objects, descendant_value)
+
         if not descendant:
-            result[resource_name] = {"mode": "unavailable", "map": {}}
+            result[resource_name] = {
+                "mode": "unavailable",
+                "map": {},
+                "font_object": font_ref,
+                "descendant_ref": descendant_ref,
+                "resolved_desc_ref": resolved_desc_ref,
+                "descendant_value": descendant_value,
+            }
             continue
 
         cidmap_value = _direct.dict_value(descendant, b"CIDToGIDMap")
         if not cidmap_value:
-            result[resource_name] = {"mode": "missing", "map": {}}
+            result[resource_name] = {
+                "mode": "missing",
+                "map": {},
+                "font_object": font_ref,
+                "descendant_ref": descendant_ref,
+                "resolved_desc_ref": resolved_desc_ref,
+                "descendant_value": descendant_value,
+                "cidmap_value": cidmap_value,
+            }
             continue
 
         stripped = cidmap_value.strip()
         if stripped == b"/Identity":
-            result[resource_name] = {"mode": "Identity", "map": {str(cid): cid for cid in used}}
+            result[resource_name] = {
+                "mode": "Identity",
+                "map": {str(cid): cid for cid in used},
+                "font_object": font_ref,
+                "descendant_ref": descendant_ref,
+                "resolved_desc_ref": resolved_desc_ref,
+                "cidmap_value": cidmap_value,
+            }
             continue
 
-        cidmap_ref = _direct.first_ref(cidmap_value)
+        cidmap_ref = _first_pdf_ref(cidmap_value)
         if cidmap_ref is None:
-            result[resource_name] = {"mode": "unavailable", "map": {}}
+            result[resource_name] = {
+                "mode": "unavailable",
+                "map": {},
+                "font_object": font_ref,
+                "descendant_ref": descendant_ref,
+                "resolved_desc_ref": resolved_desc_ref,
+                "cidmap_value": cidmap_value,
+            }
             continue
 
         stream = _direct.stream_bytes(objects.get(cidmap_ref))
         if not stream:
             warnings.append(f"{resource_name}: CIDToGIDMap object {cidmap_ref} has no readable stream")
-            result[resource_name] = {"mode": "embedded", "map": {}, "object": cidmap_ref}
+            result[resource_name] = {
+                "mode": "embedded",
+                "map": {},
+                "object": cidmap_ref,
+                "font_object": font_ref,
+                "descendant_ref": descendant_ref,
+                "resolved_desc_ref": resolved_desc_ref,
+                "cidmap_value": cidmap_value,
+            }
             continue
 
         mapping: dict[str, int | None] = {}
@@ -80,6 +157,10 @@ def _cid_to_gid_maps(pdf: bytes, page: int) -> tuple[dict[str, dict], list[str]]
             "object": cidmap_ref,
             "bytes": len(stream),
             "map": mapping,
+            "font_object": font_ref,
+            "descendant_ref": descendant_ref,
+            "resolved_desc_ref": resolved_desc_ref,
+            "cidmap_value": cidmap_value,
         }
 
     return result, warnings
@@ -124,20 +205,31 @@ def debug_genglyph(pdf: bytes, page: int, text: str) -> None:
         info = cidmaps.get(resource)
         if info is None:
             print("CIDToGIDMap: unavailable")
-        else:
-            print("CIDToGIDMap:")
-            print(f"  MODE: {info.get('mode')}")
-            if info.get("object") is not None:
-                print(f"  OBJECT: {info['object']} ({info.get('bytes', 0)} bytes)")
-            mapping = info.get("map", {})
-            for cid in used:
-                print(f"  CID {cid} -> TTF GID {mapping.get(str(cid))}")
-            print("UNMAPPED PDF GLYPH DETAILS:")
-            for cid in unresolved_cids:
-                print(
-                    f"  PDF CID {cid}: cmap/name={cmap.get(cid)!r}; "
-                    f"CIDToGIDMap GID={mapping.get(str(cid))}"
-                )
+            continue
+
+        print("CIDToGIDMap:")
+        print(f"  MODE: {info.get('mode')}")
+        print(f"  FONT OBJECT: {info.get('font_object')}")
+        print(f"  DESCENDANT REF: {info.get('descendant_ref')}")
+        print(f"  RESOLVED DESCENDANT REF: {info.get('resolved_desc_ref')}")
+        raw_desc = info.get("descendant_value")
+        if raw_desc:
+            print(f"  DESCENDANT VALUE: {raw_desc[:200]!r}")
+        raw_cidmap = info.get("cidmap_value")
+        if raw_cidmap:
+            print(f"  RAW CIDTOGIDMAP VALUE: {raw_cidmap!r}")
+        if info.get("object") is not None:
+            print(f"  OBJECT: {info['object']} ({info.get('bytes', 0)} bytes)")
+        mapping = info.get("map", {})
+        for cid in used:
+            print(f"  CID {cid} -> TTF GID {mapping.get(str(cid))}")
+
+        print("UNMAPPED PDF GLYPH DETAILS:")
+        for cid in unresolved_cids:
+            print(
+                f"  PDF CID {cid}: cmap/name={cmap.get(cid)!r}; "
+                f"CIDToGIDMap GID={mapping.get(str(cid))}"
+            )
 
     if not seen_font:
         print()
